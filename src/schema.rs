@@ -72,6 +72,65 @@ pub struct Contact {
     pub phone_number: Option<String>,
 }
 
+/// Mock claim for testing
+#[cfg(test)]
+pub fn mock_claim() -> PayerClaim {
+    PayerClaim {
+        claim_id: "abc123".to_string(),
+        place_of_service_code: 11,
+        insurance: Insurance {
+            payer_id: "medicare".to_string(),
+            patient_member_id: "pmid456".to_string(),
+        },
+        patient: Patient {
+            first_name: "Jane".to_string(),
+            last_name: "Doe".to_string(),
+            gender: "f".to_string(),
+            dob: "1990-01-01".to_string(),
+            email: Some("jane.doe@example.com".to_string()),
+            address: Some(Address {
+                street: Some("123 Main St".to_string()),
+                city: Some("Metropolis".to_string()),
+                state: Some("NY".to_string()),
+                zip: Some("12345".to_string()),
+                country: Some("USA".to_string()),
+            }),
+        },
+        organization: Organization {
+            name: "Health Inc".to_string(),
+            billing_npi: Some("9876543210".to_string()),
+            ein: Some("12-3456789".to_string()),
+            contact: Some(Contact {
+                first_name: Some("Bob".to_string()),
+                last_name: Some("Jones".to_string()),
+                phone_number: Some("555-1234".to_string()),
+            }),
+            address: Some(Address {
+                street: Some("456 Health Ave".to_string()),
+                city: Some("Gotham".to_string()),
+                state: Some("CA".to_string()),
+                zip: Some("67890".to_string()),
+                country: Some("USA".to_string()),
+            }),
+        },
+        rendering_provider: Provider {
+            first_name: "Alice".to_string(),
+            last_name: "Smith".to_string(),
+            npi: "1234567890".to_string(),
+        },
+        service_lines: vec![ServiceLine {
+            service_line_id: "sl1".to_string(),
+            procedure_code: "99213".to_string(),
+            units: 1,
+            details: "Office visit".to_string(),
+            unit_charge_currency: "USD".to_string(),
+            unit_charge_amount: 150.0,
+            modifiers: Some(vec!["A1".to_string(), "B2".to_string()]),
+            do_not_bill: Some(true),
+        }],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
