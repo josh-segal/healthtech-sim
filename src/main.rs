@@ -1,5 +1,6 @@
 mod schema;
 mod config;
+mod remittance;
 mod message;
 
 // TODO: runtime execute tasks on multiple threads (each thread using async concurrency) to make use of multiple CPU cores?
