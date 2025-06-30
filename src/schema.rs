@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 /// The root struct for a claim
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct PayerClaim {
     pub claim_id: String,
     pub place_of_service_code: u32,
@@ -12,13 +12,13 @@ pub struct PayerClaim {
     pub service_lines: Vec<ServiceLine>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Insurance {
     pub payer_id: String,
     pub patient_member_id: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Patient {
     pub first_name: String,
     pub last_name: String,
@@ -28,7 +28,7 @@ pub struct Patient {
     pub address: Option<Address>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Organization {
     pub name: String,
     pub billing_npi: Option<String>,
@@ -37,14 +37,14 @@ pub struct Organization {
     pub address: Option<Address>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Provider {
     pub first_name: String,
     pub last_name: String,
     pub npi: String, 
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct ServiceLine {
     pub service_line_id: String,
     pub procedure_code: String,
@@ -56,7 +56,7 @@ pub struct ServiceLine {
     pub do_not_bill: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Address {
     pub street: Option<String>,
     pub city: Option<String>,
@@ -65,7 +65,7 @@ pub struct Address {
     pub country: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Contact {
     pub first_name: Option<String>,
     pub last_name: Option<String>,

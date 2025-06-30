@@ -6,7 +6,7 @@ use crate::schema::PayerClaim;
 
 pub async fn stream_claims(
     path: &str,
-    sender: Sender<PayerClaim>,
+    tx: Sender<PayerClaim>,
 ) -> anyhow::Result<()> {
     let file = File::open(path).await?;
     let reader = BufReader::new(file);
@@ -15,7 +15,7 @@ pub async fn stream_claims(
     while let Some(line) = lines.next_line().await? {
         match serde_json::from_str::<PayerClaim>(&line) {
             Ok(claim) => {
-                if sender.send(claim).await.is_err() {
+                if tx.send(claim).await.is_err() {
                     eprintln!("Biller receiver dropped");
                     break;
                 }

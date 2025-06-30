@@ -1,5 +1,6 @@
 use std::env;
 
+#[derive(Clone)]
 pub struct Config {
     pub file_path: String,
     pub ingest_rate: u64,
@@ -11,7 +12,7 @@ pub fn config() -> Config {
 
     let file_path = args.next().expect("Usage: program <file_path> [ingest_rate]");
     let ingest_rate: u64 = args.next().unwrap_or("1".to_string()).parse()
-        .expect("ingest_rate must be a valid u32");
+        .expect("ingest_rate must be a valid u64");
 
     Config { file_path, ingest_rate }
 
