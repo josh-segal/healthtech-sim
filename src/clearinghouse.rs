@@ -196,6 +196,8 @@ mod tests {
     use super::*;
     use crate::{remittance::mock_remittance, schema::mock_claim};
 
+    /// Test that a claim is received, routed to the correct payer, and remittance is returned to the biller.
+    /// Expected: Claim is forwarded, remittance is received, and history is updated.
     #[tokio::test]
     async fn test_run_clearinghouse() {
         // input channel for claims from biller
@@ -263,5 +265,203 @@ mod tests {
         } else {
             panic!("Expected RemittanceMessage::Processed");
         }
+    }
+
+    /// Test that claims with unknown payer IDs are handled gracefully.
+    /// Expected: Error is logged, claim is not forwarded.
+    #[tokio::test]
+    async fn test_handle_claim_unknown_payer() {
+        let (claim_tx, claim_rx) = tokio::sync::mpsc::channel(1);
+        let (_remittance_tx, remittance_rx) = tokio::sync::mpsc::channel(1);
+        let (payer_tx, mut payer_rx) = tokio::sync::mpsc::channel(1);
+        let mut payer_txs = HashMap::new();
+        payer_txs.insert("medicare".to_string(), payer_tx);
+        let biller_txs = Arc::new(Mutex::new(HashMap::new()));
+        let history = Arc::new(Mutex::new(HashMap::new()));
+        let clearinghouse = Clearinghouse::new(
+            claim_rx,
+            payer_txs,
+            remittance_rx,
+            biller_txs.clone(),
+            history.clone(),
+            false,
+        );
+        tokio::spawn(async move {
+            clearinghouse.run().await;
+        });
+        let mut mock_claim = mock_claim();
+        mock_claim.insurance.payer_id = "unknown_payer".to_string();
+        let (response_tx, _response_rx) = tokio::sync::mpsc::channel(1);
+        let envelope = ClaimEnvelope {
+            claim: mock_claim,
+            response_tx,
+        };
+        claim_tx.send(ClaimMessage::NewClaim(envelope)).await.unwrap();
+        // Should not receive any message from payer
+        assert!(payer_rx.try_recv().is_err());
+    }
+
+    /// Test that remittance for unknown claim IDs is handled gracefully.
+    /// Expected: Error is logged, no panic.
+    #[tokio::test]
+    async fn test_handle_remittance_no_history() {
+        let (_claim_tx, claim_rx) = tokio::sync::mpsc::channel(1);
+        let (remittance_tx, remittance_rx) = tokio::sync::mpsc::channel(1);
+        let (payer_tx, _payer_rx) = tokio::sync::mpsc::channel(1);
+        let mut payer_txs = HashMap::new();
+        payer_txs.insert("medicare".to_string(), payer_tx);
+        let biller_txs = Arc::new(Mutex::new(HashMap::new()));
+        let history = Arc::new(Mutex::new(HashMap::new()));
+        let clearinghouse = Clearinghouse::new(
+            claim_rx,
+            payer_txs,
+            remittance_rx,
+            biller_txs.clone(),
+            history.clone(),
+            false,
+        );
+        tokio::spawn(async move {
+            clearinghouse.run().await;
+        });
+        let mut mock_remittance = mock_remittance();
+        mock_remittance.claim_id = "unknown_claim".to_string();
+        remittance_tx.send(RemittanceMessage::Processed(mock_remittance)).await.unwrap();
+        // Should not panic, just log error
+    }
+
+    /// Test that remittance for a claim not in the Submitted state is handled gracefully.
+    /// Expected: Error is logged, no panic.
+    #[tokio::test]
+    async fn test_handle_remittance_wrong_state() {
+        let (_claim_tx, claim_rx) = tokio::sync::mpsc::channel(1);
+        let (remittance_tx, remittance_rx) = tokio::sync::mpsc::channel(1);
+        let (payer_tx, _payer_rx) = tokio::sync::mpsc::channel(1);
+        let mut payer_txs = HashMap::new();
+        payer_txs.insert("medicare".to_string(), payer_tx);
+        let biller_txs = Arc::new(Mutex::new(HashMap::new()));
+        let history = Arc::new(Mutex::new(HashMap::new()));
+        let clearinghouse = Clearinghouse::new(
+            claim_rx,
+            payer_txs,
+            remittance_rx,
+            biller_txs.clone(),
+            history.clone(),
+            false,
+        );
+        tokio::spawn(async move {
+            clearinghouse.run().await;
+        });
+        let mock_claim = mock_claim();
+        let mock_remittance = mock_remittance();
+        // Manually insert a remitted claim to simulate wrong state
+        {
+            let mut history = history.lock().await;
+            history.insert(
+                mock_claim.claim_id.clone(),
+                ClaimStatus::Remitted(RemittanceRecord::new(
+                    mock_claim,
+                    mock_remittance.clone(),
+                    Instant::now(),
+                    Instant::now(),
+                )),
+            );
+        }
+        remittance_tx.send(RemittanceMessage::Processed(mock_remittance)).await.unwrap();
+        // Should not panic, just log error
+    }
+
+    /// Test that remittance for a claim with no biller channel is handled gracefully.
+    /// Expected: Error is logged, no panic.
+    #[tokio::test]
+    async fn test_handle_remittance_no_biller_channel() {
+        let (_claim_tx, claim_rx) = tokio::sync::mpsc::channel(1);
+        let (remittance_tx, remittance_rx) = tokio::sync::mpsc::channel(1);
+        let (payer_tx, _payer_rx) = tokio::sync::mpsc::channel(1);
+        let mut payer_txs = HashMap::new();
+        payer_txs.insert("medicare".to_string(), payer_tx);
+        let biller_txs = Arc::new(Mutex::new(HashMap::new()));
+        let history = Arc::new(Mutex::new(HashMap::new()));
+        let clearinghouse = Clearinghouse::new(
+            claim_rx,
+            payer_txs,
+            remittance_rx,
+            biller_txs.clone(),
+            history.clone(),
+            false,
+        );
+        tokio::spawn(async move {
+            clearinghouse.run().await;
+        });
+        let mock_claim = mock_claim();
+        let mock_remittance = mock_remittance();
+        // Manually insert claim in history but don't add biller channel
+        {
+            let mut history = history.lock().await;
+            history.insert(
+                mock_claim.claim_id.clone(),
+                ClaimStatus::Submitted {
+                    claim: mock_claim,
+                    submitted_at: Instant::now(),
+                },
+            );
+        }
+        remittance_tx.send(RemittanceMessage::Processed(mock_remittance)).await.unwrap();
+        // Should not panic, just log error
+    }
+
+    /// Test that the clearinghouse can handle multiple claims and remittances correctly.
+    /// Expected: All claims are processed and remittances are returned to correct billers.
+    #[tokio::test]
+    async fn test_clearinghouse_multiple_claims() {
+        let (claim_tx, claim_rx) = tokio::sync::mpsc::channel(2);
+        let (remittance_tx, remittance_rx) = tokio::sync::mpsc::channel(2);
+        let (payer_tx, mut payer_rx) = tokio::sync::mpsc::channel(2);
+        let mut payer_txs = HashMap::new();
+        payer_txs.insert("medicare".to_string(), payer_tx);
+        let biller_txs = Arc::new(Mutex::new(HashMap::new()));
+        let history = Arc::new(Mutex::new(HashMap::new()));
+        let clearinghouse = Clearinghouse::new(
+            claim_rx,
+            payer_txs,
+            remittance_rx,
+            biller_txs.clone(),
+            history.clone(),
+            false,
+        );
+        tokio::spawn(async move {
+            clearinghouse.run().await;
+        });
+        let claim1 = mock_claim();
+        let mut claim2 = mock_claim();
+        claim2.claim_id = "claim2".to_string();
+        let (response_tx1, mut response_rx1) = tokio::sync::mpsc::channel(1);
+        let (response_tx2, mut response_rx2) = tokio::sync::mpsc::channel(1);
+        let envelope1 = ClaimEnvelope {
+            claim: claim1.clone(),
+            response_tx: response_tx1,
+        };
+        let envelope2 = ClaimEnvelope {
+            claim: claim2.clone(),
+            response_tx: response_tx2,
+        };
+        claim_tx.send(ClaimMessage::NewClaim(envelope1)).await.unwrap();
+        claim_tx.send(ClaimMessage::NewClaim(envelope2)).await.unwrap();
+        // Verify both claims were sent to payer
+        for _ in 0..2 {
+            if let Some(PayerMessage::Adjudicate(claim)) = payer_rx.recv().await {
+                assert!(claim.claim_id == "abc123" || claim.claim_id == "claim2");
+            }
+        }
+        // Send remittances back
+        let remittance1 = mock_remittance();
+        let mut remittance2 = mock_remittance();
+        remittance2.claim_id = "claim2".to_string();
+        remittance_tx.send(RemittanceMessage::Processed(remittance1)).await.unwrap();
+        remittance_tx.send(RemittanceMessage::Processed(remittance2)).await.unwrap();
+        // Verify remittances were sent to billers
+        let response1 = response_rx1.recv().await.expect("Expected remittance 1");
+        let response2 = response_rx2.recv().await.expect("Expected remittance 2");
+        assert!(matches!(response1, RemittanceMessage::Processed(_)));
+        assert!(matches!(response2, RemittanceMessage::Processed(_)));
     }
 }

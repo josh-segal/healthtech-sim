@@ -3,6 +3,14 @@ name = "healthtechsim"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "healthtechsim"
+path = "src/lib.rs"
+
+[[bin]]
+name = "healthtechsim"
+path = "src/main.rs"
+
 [dependencies]
 tokio = { version = "1.45.1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -13,3 +21,4 @@ anyhow = "1.0.98"
 rand = "0.9"
 fake = "2.6"
 chrono = { version = "0.4", features = ["serde"] }
+tempfile = "3.20.0"

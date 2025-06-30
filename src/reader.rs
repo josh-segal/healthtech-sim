@@ -41,3 +41,62 @@ pub async fn stream_claims(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+    use std::io::Write;
+    use crate::schema::mock_claim;
+
+    /// Test that valid claims in a file are parsed and sent to the channel.
+    /// Expected: All valid claims are sent; function returns Ok.
+    #[tokio::test]
+    async fn test_stream_claims_happy_path() {
+        let mut tmpfile = NamedTempFile::new().unwrap();
+        let claim = mock_claim();
+        let json = serde_json::to_string(&claim).unwrap();
+        writeln!(tmpfile, "{}", json).unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        let path = tmpfile.path().to_str().unwrap();
+        let result = stream_claims(path, tx, false).await;
+        assert!(result.is_ok());
+        let received = rx.recv().await.expect("Expected a claim");
+        assert_eq!(received.claim_id, claim.claim_id);
+    }
+
+    /// Test that invalid JSON lines are skipped and do not panic or break the stream.
+    /// Expected: Only valid claims are sent; errors are logged; function returns Ok.
+    #[tokio::test]
+    async fn test_stream_claims_invalid_json() {
+        let mut tmpfile = NamedTempFile::new().unwrap();
+        let claim = mock_claim();
+        let json = serde_json::to_string(&claim).unwrap();
+        writeln!(tmpfile, "not a json").unwrap();
+        writeln!(tmpfile, "{}", json).unwrap();
+        writeln!(tmpfile, "{{ invalid json }}").unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        let path = tmpfile.path().to_str().unwrap();
+        let result = stream_claims(path, tx, false).await;
+        assert!(result.is_ok());
+        let received = rx.recv().await.expect("Expected a claim");
+        assert_eq!(received.claim_id, claim.claim_id);
+        // No more claims should be sent
+        assert!(rx.try_recv().is_err());
+    }
+
+    /// Test that if the receiver drops, the function exits gracefully.
+    /// Expected: Function returns Ok after logging the error.
+    #[tokio::test]
+    async fn test_stream_claims_biller_channel_dropped() {
+        let mut tmpfile = NamedTempFile::new().unwrap();
+        let claim = mock_claim();
+        let json = serde_json::to_string(&claim).unwrap();
+        writeln!(tmpfile, "{}", json).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        drop(_rx); // Drop receiver to simulate biller down
+        let path = tmpfile.path().to_str().unwrap();
+        let result = stream_claims(path, tx, false).await;
+        assert!(result.is_ok());
+    }
+}

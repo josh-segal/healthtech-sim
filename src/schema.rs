@@ -73,7 +73,6 @@ pub struct Contact {
 }
 
 /// Mock claim for testing
-#[cfg(test)]
 pub fn mock_claim() -> PayerClaim {
     PayerClaim {
         claim_id: "abc123".to_string(),

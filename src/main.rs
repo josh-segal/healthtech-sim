@@ -4,17 +4,14 @@ use std::sync::Arc;
 use anyhow::Result;
 use tokio::sync::{Mutex, mpsc};
 
-mod biller;
-mod clearinghouse;
-mod config;
-mod json_faker;
-mod logging;
-mod message;
-mod payer;
-mod reader;
-mod remittance;
-mod reporter;
-mod schema;
+use healthtechsim::biller;
+use healthtechsim::clearinghouse;
+use healthtechsim::config;
+use healthtechsim::json_faker;
+use healthtechsim::payer;
+use healthtechsim::reader;
+use healthtechsim::reporter;
+use healthtechsim::schema;
 
 // TODO: runtime execute tasks on multiple threads (each thread using async concurrency) to make use of multiple CPU cores?
 // concurrency + parallelism
@@ -23,9 +20,10 @@ async fn main() -> Result<()> {
     // parse CLI args
 
     // for simulation
-    json_faker::write_fake_claims_jsonl("fake_claims.jsonl", 100)
+    let claims = 100;
+    json_faker::write_fake_claims_jsonl("fake_claims.jsonl", claims)
         .expect("Failed to write fake claims");
-    println!("Wrote 10 fake claims to fake_claims.jsonl");
+    println!("Wrote {} fake claims to fake_claims.jsonl", claims);
 
     let config = config::config();
 
@@ -34,13 +32,13 @@ async fn main() -> Result<()> {
     let (claim_input_tx, claim_input_rx) = mpsc::channel::<schema::PayerClaim>(100);
 
     // biller -> clearinghouse
-    let (claim_tx, claim_rx) = mpsc::channel::<message::ClaimMessage>(100);
+    let (claim_tx, claim_rx) = mpsc::channel::<healthtechsim::message::ClaimMessage>(100);
 
     // clearinghouse -> payer
     //TODO: abstract payer setup to not be manual
-    let (payer1_tx, payer1_rx) = mpsc::channel::<message::PayerMessage>(100);
-    let (payer2_tx, payer2_rx) = mpsc::channel::<message::PayerMessage>(100);
-    let (payer3_tx, payer3_rx) = mpsc::channel::<message::PayerMessage>(100);
+    let (payer1_tx, payer1_rx) = mpsc::channel::<healthtechsim::message::PayerMessage>(100);
+    let (payer2_tx, payer2_rx) = mpsc::channel::<healthtechsim::message::PayerMessage>(100);
+    let (payer3_tx, payer3_rx) = mpsc::channel::<healthtechsim::message::PayerMessage>(100);
 
     let payer_txs = HashMap::from([
         ("medicare".to_string(), payer1_tx),
@@ -49,7 +47,7 @@ async fn main() -> Result<()> {
     ]);
 
     // payer -> clearinghouse
-    let (remit_tx, remit_rx) = mpsc::channel::<message::RemittanceMessage>(100);
+    let (remit_tx, remit_rx) = mpsc::channel::<healthtechsim::message::RemittanceMessage>(100);
 
     // shared
     //TODO: check correctness
@@ -62,7 +60,6 @@ async fn main() -> Result<()> {
         config.clone(),
         claim_input_rx,
         claim_tx,
-        #[cfg(test)]
         None,
     ));
 
