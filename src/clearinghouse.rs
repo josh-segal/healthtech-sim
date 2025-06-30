@@ -95,3 +95,70 @@ impl Clearinghouse {
 }
 
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{remittance::mock_remittance, schema::mock_claim};
+
+    #[tokio::test]
+    async fn test_run_clearinghouse() {
+        // input channel for claims from biller
+        let (claim_tx, claim_rx) = tokio::sync::mpsc::channel(1);
+
+        // input channel for remittances from payer
+        let (remittance_tx, remittance_rx) = tokio::sync::mpsc::channel(1);
+
+        // output channel for PayerMessage -> Payer
+        let (payer_tx, mut payer_rx) = tokio::sync::mpsc::channel(1);
+
+        // Create payer channels map
+        let mut payer_txs = HashMap::new();
+        payer_txs.insert("medicare".to_string(), payer_tx);
+
+        // Create shared state
+        let biller_txs = Arc::new(Mutex::new(HashMap::new()));
+        let claim_timestamps = Arc::new(Mutex::new(HashMap::new()));
+
+        // spawn clearinghouse task
+        let clearinghouse = Clearinghouse::new(
+            claim_rx,
+            payer_txs,
+            remittance_rx,
+            biller_txs.clone(),
+            claim_timestamps.clone(),
+        );
+        tokio::spawn(async move {
+            clearinghouse.run().await;
+        });
+
+        // Create a mock claim envelope
+        let mock_claim = mock_claim();
+        let (response_tx, mut response_rx) = tokio::sync::mpsc::channel(1);
+        let envelope = ClaimEnvelope {
+            claim: mock_claim,
+            response_tx,
+        };
+
+        // Send claim envelope to clearinghouse
+        claim_tx.send(ClaimMessage::NewClaim(envelope)).await.unwrap();
+
+        // Verify claim was forwarded to payer
+        if let Some(PayerMessage::Adjudicate(claim)) = payer_rx.recv().await {
+            assert_eq!(claim.claim_id, "abc123");
+            assert_eq!(claim.insurance.payer_id, "medicare");
+        } else {
+            panic!("Expected PayerMessage::Adjudicate");
+        }
+
+        // Simulate remittance being returned from payer
+        let mock_remittance = mock_remittance();
+        remittance_tx.send(RemittanceMessage::Processed(mock_remittance)).await.unwrap();
+
+        // Verify remittance was forwarded to biller
+        if let Some(RemittanceMessage::Processed(remittance)) = response_rx.recv().await {
+            assert_eq!(remittance.claim_id, "abc123");
+        } else {
+            panic!("Expected RemittanceMessage::Processed");
+        }
+    }
+}
