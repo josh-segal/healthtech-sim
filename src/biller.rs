@@ -21,7 +21,7 @@ pub async fn run_biller(
     tx: Sender<ClaimMessage>,
     #[cfg(test)] test_notify: Option<Sender<String>>, //optional notifcation for remittance
 ) -> anyhow::Result<()> {
-    let interval = Duration::from_secs(config.ingest_rate as u64);
+    let interval = Duration::from_secs(config.ingest_rate);
     let mut ticker = tokio::time::interval(interval);
 
     while let Some(claim) = rx.recv().await {
@@ -39,7 +39,7 @@ pub async fn run_biller(
 
         #[cfg(not(test))]
         let test_notify_opt: Option<Sender<String>> = None;
-        
+
         // spawn a task to wait for the remittance for this claim
         tokio::spawn(async move {
             if let Some(response) = rem_rx.recv().await {
