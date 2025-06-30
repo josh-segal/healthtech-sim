@@ -1,8 +1,10 @@
+use std::time::Instant;
 use serde::{Deserialize};
 
 use crate::schema::PayerClaim;
 
-#[derive(Debug, Deserialize)]
+//TODO: switch from pub fields to pub getts
+#[derive(Debug, Deserialize, Clone)]
 pub struct ServiceLineRemittance {
     pub service_line_id: String,
     pub payer_paid_amount: f64,
@@ -12,10 +14,40 @@ pub struct ServiceLineRemittance {
     pub not_allowed_amount: f64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Remittance {
     pub claim_id: String,
     pub service_line_remittances: Vec<ServiceLineRemittance>,
+}
+
+#[derive(Debug)]
+pub struct RemittanceRecord {
+    claim: PayerClaim,
+    remittance: Remittance,
+    submitted_at: Instant,
+    remitted_at: Instant,
+}
+
+impl RemittanceRecord {
+    pub fn new(claim: PayerClaim, remittance: Remittance, submitted_at: Instant, remitted_at: Instant) -> Self {
+        Self {
+            claim,
+            remittance,
+            submitted_at,
+            remitted_at,
+        }
+    }
+    pub fn elapsed(&self) -> std::time::Duration {
+        self.remitted_at.duration_since(self.submitted_at)
+    }
+
+    pub fn patient_id(&self) -> &str {
+        &self.claim.insurance.patient_member_id
+    }
+
+    pub fn payer_id(&self) -> &str {
+        &self.claim.insurance.payer_id
+    }
 }
 
 impl Remittance {
@@ -63,7 +95,7 @@ impl Remittance {
                 + remit.copay_amount
                 + remit.deductible_amount
                 + remit.not_allowed_amount; //TODO: include or not?
-
+  
             // Allow for floating point rounding errors
             if (sum - billed).abs() > 1e-2 {
                 return Err(format!(

@@ -3,15 +3,15 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{mpsc::{Receiver, Sender}, Mutex};
 
-use crate::message::{ClaimMessage, ClaimEnvelope, PayerMessage, RemittanceMessage};
-use crate::remittance::Remittance;
+use crate::message::{ClaimEnvelope, ClaimMessage, ClaimStatus, PayerMessage, RemittanceMessage};
+use crate::remittance::{Remittance, RemittanceRecord};
 
 pub struct Clearinghouse {
     claim_rx: Receiver<ClaimMessage>,
     payer_txs: HashMap<String, Sender<PayerMessage>>,
     remittance_rx: Receiver<RemittanceMessage>,
     biller_txs: Arc<Mutex<HashMap<String, Sender<RemittanceMessage>>>>,
-    claim_timestamps: Arc<Mutex<HashMap<String, Instant>>>,
+    history: Arc<Mutex<HashMap<String, ClaimStatus>>>,
 }
 
 impl Clearinghouse {
@@ -20,14 +20,14 @@ impl Clearinghouse {
         payer_txs: HashMap<String, Sender<PayerMessage>>,
         remittance_rx: Receiver<RemittanceMessage>,
         biller_txs: Arc<Mutex<HashMap<String, Sender<RemittanceMessage>>>>,
-        claim_timestamps: Arc<Mutex<HashMap<String, Instant>>>,
+        history: Arc<Mutex<HashMap<String, ClaimStatus>>>,
     ) -> Self {
         Self {
             claim_rx,
             payer_txs,
             remittance_rx,
             biller_txs,
-            claim_timestamps,
+            history,
         }
     }
 
@@ -63,7 +63,10 @@ impl Clearinghouse {
         self.biller_txs.lock().await.insert(claim_id.clone(), response_tx);
 
         // Track for AR aging
-        self.claim_timestamps.lock().await.insert(claim_id.clone(), Instant::now());
+        self.history.lock().await.insert(claim_id.clone(), ClaimStatus::Submitted {
+            claim: claim.clone(),
+            submitted_at: Instant::now(),
+        });
 
         // Forward claim to payer
         if let Some(payer_tx) = self.payer_txs.get(&payer_id) {
@@ -78,6 +81,15 @@ impl Clearinghouse {
 
     async fn handle_remittance(&mut self, remittance: Remittance) {
         let claim_id = remittance.claim_id.clone();
+
+        if let Some(ClaimStatus::Submitted { claim, submitted_at}) = self.history.lock().await.remove(&claim_id) {
+            let record = RemittanceRecord::new(
+                claim, 
+                remittance.clone(), 
+                submitted_at, 
+                Instant::now());
+            self.history.lock().await.insert(claim_id.clone(), ClaimStatus::Remitted(record));
+        }
 
         // Forward remittance to originating biller
         let tx_opt = self.biller_txs.lock().await.remove(&claim_id);
