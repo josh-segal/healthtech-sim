@@ -87,16 +87,16 @@ async fn main() -> Result<()> {
     // payer tasks
     let payer1 = payer::Payer::new(
         "medicare".into(),
-        10,
-        20,
+        1,
+        3,
         remit_tx.clone(),
         payer1_rx,
         config.verbose,
     );
     let payer2 = payer::Payer::new(
         "united_health_group".into(),
-        30,
-        40,
+        2,
+        4,
         remit_tx.clone(),
         payer2_rx,
         config.verbose,

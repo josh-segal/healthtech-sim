@@ -36,27 +36,21 @@ fn print_combined_report(records: &HashMap<String, ClaimStatus>) {
     let mut aging_buckets: HashMap<String, [u32; 4]> = HashMap::new();
     let mut patient_summary: HashMap<String, Totals> = HashMap::new();
 
-    for status in records.values() {
+    for status in records.values() { //TODO: look into more efficient ways to do this besides iterating over full history every 5 sec
         // AR Aging Report logic 
-        let (payer_id, age_secs) = match status {
-            ClaimStatus::Submitted { claim, submitted_at } => (
-                claim.insurance.payer_id.clone(),
-                Instant::now().duration_since(*submitted_at).as_secs(),
-            ),
-            ClaimStatus::Remitted(record) => (
-                record.payer_id().to_string(),
-                record.elapsed().as_secs(),
-            ),
-        };
-
-        let bucket = match age_secs {
-            0..=59 => 0,
-            60..=119 => 1,
-            120..=179 => 2,
-            _ => 3,
-        };
-
-        aging_buckets.entry(payer_id.clone()).or_insert([0; 4])[bucket] += 1;
+        if let ClaimStatus::Submitted { claim, submitted_at } = status {
+            let payer_id = claim.insurance.payer_id.clone();
+            let age_secs = Instant::now().duration_since(*submitted_at).as_secs();
+    
+            let bucket = match age_secs {
+                0..=59 => 0,
+                60..=119 => 1,
+                120..=179 => 2,
+                _ => 3,
+            };
+    
+            aging_buckets.entry(payer_id).or_insert([0; 4])[bucket] += 1;
+        }
 
         // Patient Financial Summary logic 
         if let ClaimStatus::Remitted(record) = status {
@@ -76,6 +70,7 @@ fn print_combined_report(records: &HashMap<String, ClaimStatus>) {
     for (payer, [b0, b1, b2, b3]) in aging_buckets {
         println!("{payer}: 0–1m: {b0}, 1–2m: {b1}, 2–3m: {b2}, 3+m: {b3}");
     }
+    println!("");
 
     println!("\n--- 👤 Patient Financial Summary ---");
     for (patient, totals) in patient_summary {
@@ -84,5 +79,6 @@ fn print_combined_report(records: &HashMap<String, ClaimStatus>) {
             totals.copay, totals.coins, totals.deduct
         );
     }
+    println!("");
 }
 
