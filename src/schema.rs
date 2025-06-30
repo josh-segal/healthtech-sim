@@ -22,8 +22,8 @@ pub struct Insurance {
 pub struct Patient {
     pub first_name: String,
     pub last_name: String,
-    pub gender: String, 
-    pub dob: String,  
+    pub gender: String,
+    pub dob: String,
     pub email: Option<String>,
     pub address: Option<Address>,
 }
@@ -41,7 +41,7 @@ pub struct Organization {
 pub struct Provider {
     pub first_name: String,
     pub last_name: String,
-    pub npi: String, 
+    pub npi: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -207,20 +207,35 @@ mod tests {
         assert_eq!(claim.patient.gender, "f");
         assert_eq!(claim.patient.dob, "1990-01-01");
         assert_eq!(claim.patient.email.as_deref(), Some("jane.doe@example.com"));
-        let p_addr = claim.patient.address.as_ref().expect("patient address should exist");
+        let p_addr = claim
+            .patient
+            .address
+            .as_ref()
+            .expect("patient address should exist");
         assert_eq!(p_addr.street.as_deref(), Some("123 Main St"));
         assert_eq!(p_addr.city.as_deref(), Some("Metropolis"));
         assert_eq!(p_addr.state.as_deref(), Some("NY"));
         assert_eq!(p_addr.zip.as_deref(), Some("12345"));
         assert_eq!(p_addr.country.as_deref(), Some("USA"));
         assert_eq!(claim.organization.name, "Health Inc");
-        assert_eq!(claim.organization.billing_npi.as_deref(), Some("9876543210"));
+        assert_eq!(
+            claim.organization.billing_npi.as_deref(),
+            Some("9876543210")
+        );
         assert_eq!(claim.organization.ein.as_deref(), Some("12-3456789"));
-        let org_contact = claim.organization.contact.as_ref().expect("org contact should exist");
+        let org_contact = claim
+            .organization
+            .contact
+            .as_ref()
+            .expect("org contact should exist");
         assert_eq!(org_contact.first_name.as_deref(), Some("Bob"));
         assert_eq!(org_contact.last_name.as_deref(), Some("Jones"));
         assert_eq!(org_contact.phone_number.as_deref(), Some("555-1234"));
-        let org_addr = claim.organization.address.as_ref().expect("org address should exist");
+        let org_addr = claim
+            .organization
+            .address
+            .as_ref()
+            .expect("org address should exist");
         assert_eq!(org_addr.street.as_deref(), Some("456 Health Ave"));
         assert_eq!(org_addr.city.as_deref(), Some("Gotham"));
         assert_eq!(org_addr.state.as_deref(), Some("CA"));

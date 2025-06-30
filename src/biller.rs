@@ -2,9 +2,9 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::Duration;
 
 use crate::config::Config;
+use crate::logging::log_claim_event;
 use crate::message::{ClaimEnvelope, ClaimMessage};
 use crate::schema::PayerClaim;
-use crate::logging::log_claim_event;
 
 /// Biller task that processes claims received over a PayerClaim channel.
 ///
@@ -15,7 +15,6 @@ use crate::logging::log_claim_event;
 /// - Sends the envelope to the clearinghouse via the `ClaimMessage` channel.
 ///
 /// The ingest rate is controlled by the configured interval.
-// TODO: possibly add struct to enable multiple billers in program
 pub async fn run_biller(
     config: Config,
     mut rx: Receiver<PayerClaim>,
@@ -35,7 +34,12 @@ pub async fn run_biller(
         // ingest throttle
         ticker.tick().await;
         if verbose {
-            log_claim_event("biller", &claim.claim_id, "received_payer_claim", &format!("Received PayerClaim: Claim ID: {}", &claim.claim_id));
+            log_claim_event(
+                "biller",
+                &claim.claim_id,
+                "received_payer_claim",
+                &format!("Received PayerClaim: Claim ID: {}", &claim.claim_id),
+            );
         }
         // Create a one-time channel for this claim
         let (rem_tx, mut rem_rx) = tokio::sync::mpsc::channel(1);
@@ -51,7 +55,12 @@ pub async fn run_biller(
             async move {
                 if let Some(_response) = rem_rx.recv().await {
                     if verbose {
-                        log_claim_event("biller", &claim_id, "received_remittance", &format!("Received remittance for claim: {}", &claim_id));
+                        log_claim_event(
+                            "biller",
+                            &claim_id,
+                            "received_remittance",
+                            &format!("Received remittance for claim: {}", &claim_id),
+                        );
                     }
                     if let Some(tx) = test_notify_opt {
                         let _ = tx.send(claim_id).await;
@@ -66,7 +75,12 @@ pub async fn run_biller(
         };
 
         if verbose {
-            log_claim_event("biller", &claim_id, "sending_claim_envelope", &format!("Sending claim envelope to clearinghouse: {}", &claim_id));
+            log_claim_event(
+                "biller",
+                &claim_id,
+                "sending_claim_envelope",
+                &format!("Sending claim envelope to clearinghouse: {}", &claim_id),
+            );
         }
 
         if tx.send(ClaimMessage::NewClaim(envelope)).await.is_err() {
@@ -74,10 +88,7 @@ pub async fn run_biller(
             return Err(anyhow::anyhow!("Clearinghouse channel dropped"));
         }
     }
-    if verbose {
-        log_claim_event("biller", "-", "shutdown", "Shutting down biller task");
-    }
-    Ok(()) //TODO: is the biller task shutting down too early?
+    Ok(())
 }
 
 #[cfg(test)]
@@ -159,7 +170,10 @@ mod tests {
         let mock_claim = mock_claim();
         claim_tx.send(mock_claim).await.unwrap();
         let result = biller_handle.await.unwrap();
-        assert!(result.is_err(), "Expected error when clearinghouse channel is dropped");
+        assert!(
+            result.is_err(),
+            "Expected error when clearinghouse channel is dropped"
+        );
     }
 
     /// Test that the biller sends a notification when a remittance is received for a claim.
@@ -181,9 +195,15 @@ mod tests {
         claim_tx.send(mock_claim.clone()).await.unwrap();
         if let Some(ClaimMessage::NewClaim(envelope)) = out_rx.recv().await {
             let mock_remittance = mock_remittance();
-            let _ = envelope.response_tx.send(RemittanceMessage::Processed(mock_remittance)).await;
+            let _ = envelope
+                .response_tx
+                .send(RemittanceMessage::Processed(mock_remittance))
+                .await;
         }
-        let notified_id = notify_rx.recv().await.expect("Expected remittance notification");
+        let notified_id = notify_rx
+            .recv()
+            .await
+            .expect("Expected remittance notification");
         assert_eq!(notified_id, mock_claim.claim_id);
     }
 
@@ -202,7 +222,11 @@ mod tests {
         let result = run_biller(mock_config, claim_rx, out_tx, Some(notify_tx)).await;
         assert!(result.is_err(), "Expected error with invalid ingest_rate");
         let err_msg = format!("{}", result.unwrap_err());
-        assert!(err_msg.contains("ingest_rate must be non-zero"), "Unexpected error message: {}", err_msg);
+        assert!(
+            err_msg.contains("ingest_rate must be non-zero"),
+            "Unexpected error message: {}",
+            err_msg
+        );
     }
 
     /// Test that the biller can process two claims with the same claim ID.
@@ -229,19 +253,28 @@ mod tests {
         for _ in 0..2 {
             if let Some(ClaimMessage::NewClaim(envelope)) = out_rx.recv().await {
                 let mock_remittance = mock_remittance();
-                let _ = envelope.response_tx.send(RemittanceMessage::Processed(mock_remittance)).await;
+                let _ = envelope
+                    .response_tx
+                    .send(RemittanceMessage::Processed(mock_remittance))
+                    .await;
             }
-            let notified_id = notify_rx.recv().await.expect("Expected remittance notification");
+            let notified_id = notify_rx
+                .recv()
+                .await
+                .expect("Expected remittance notification");
             received_ids.push(notified_id);
         }
-        assert_eq!(received_ids, vec![claim1.claim_id.clone(), claim2.claim_id.clone()]);
+        assert_eq!(
+            received_ids,
+            vec![claim1.claim_id.clone(), claim2.claim_id.clone()]
+        );
     }
 
     /// Test that the biller can process a claim with minimal/empty fields.
     /// Expected: The claim is sent, remittance is received, and notification channel receives the claim ID.
     #[tokio::test]
     async fn test_biller_empty_claim() {
-        use crate::schema::{PayerClaim, Insurance, Patient, Organization, Provider, ServiceLine};
+        use crate::schema::{Insurance, Organization, Patient, PayerClaim, Provider, ServiceLine};
         let mock_config = Config {
             file_path: "mock_path.json".to_string(),
             ingest_rate: 1,
@@ -256,7 +289,10 @@ mod tests {
         let empty_claim = PayerClaim {
             claim_id: "empty1".to_string(),
             place_of_service_code: 0,
-            insurance: Insurance { payer_id: "".to_string(), patient_member_id: "".to_string() },
+            insurance: Insurance {
+                payer_id: "".to_string(),
+                patient_member_id: "".to_string(),
+            },
             patient: Patient {
                 first_name: "".to_string(),
                 last_name: "".to_string(),
@@ -291,9 +327,15 @@ mod tests {
         claim_tx.send(empty_claim.clone()).await.unwrap();
         if let Some(ClaimMessage::NewClaim(envelope)) = out_rx.recv().await {
             let mock_remittance = mock_remittance();
-            let _ = envelope.response_tx.send(RemittanceMessage::Processed(mock_remittance)).await;
+            let _ = envelope
+                .response_tx
+                .send(RemittanceMessage::Processed(mock_remittance))
+                .await;
         }
-        let notified_id = notify_rx.recv().await.expect("Expected remittance notification");
+        let notified_id = notify_rx
+            .recv()
+            .await
+            .expect("Expected remittance notification");
         assert_eq!(notified_id, empty_claim.claim_id);
     }
 }

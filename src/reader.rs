@@ -1,9 +1,9 @@
 use tokio::fs::File;
-use tokio::io::{BufReader, AsyncBufReadExt};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::mpsc::Sender;
 
-use crate::schema::PayerClaim;
 use crate::logging::log_claim_event;
+use crate::schema::PayerClaim;
 
 pub async fn stream_claims(
     path: &str,
@@ -11,7 +11,12 @@ pub async fn stream_claims(
     verbose: bool,
 ) -> anyhow::Result<()> {
     if verbose {
-        log_claim_event("reader", "-", "start", &format!("Starting claim stream from file: {}", path));
+        log_claim_event(
+            "reader",
+            "-",
+            "start",
+            &format!("Starting claim stream from file: {}", path),
+        );
     }
     let file = File::open(path).await?;
     let reader = BufReader::new(file);
@@ -26,7 +31,12 @@ pub async fn stream_claims(
             Ok(claim) => {
                 if verbose {
                     // log_claim_event("reader", &claim.claim_id, "parsed_claim", &format!("Parsed claim: {}", &claim.claim_id));
-                    log_claim_event("reader", &claim.claim_id, "sending_claim", &format!("Sending parsed claim: {}", &claim.claim_id));
+                    log_claim_event(
+                        "reader",
+                        &claim.claim_id,
+                        "sending_claim",
+                        &format!("Sending parsed claim: {}", &claim.claim_id),
+                    );
                 }
                 if tx.send(claim).await.is_err() {
                     eprintln!("Biller receiver dropped");
@@ -37,7 +47,12 @@ pub async fn stream_claims(
         }
     }
     if verbose {
-        log_claim_event("reader", "-", "finished", &format!("Finished streaming claims from file: {}", path));
+        log_claim_event(
+            "reader",
+            "-",
+            "finished",
+            &format!("Finished streaming claims from file: {}", path),
+        );
     }
     Ok(())
 }
@@ -45,9 +60,9 @@ pub async fn stream_claims(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
-    use std::io::Write;
     use crate::schema::mock_claim;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
 
     /// Test that valid claims in a file are parsed and sent to the channel.
     /// Expected: All valid claims are sent; function returns Ok.

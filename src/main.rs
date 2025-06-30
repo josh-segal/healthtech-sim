@@ -13,8 +13,6 @@ use healthtechsim::reader;
 use healthtechsim::reporter;
 use healthtechsim::schema;
 
-// TODO: runtime execute tasks on multiple threads (each thread using async concurrency) to make use of multiple CPU cores?
-// concurrency + parallelism
 #[tokio::main]
 async fn main() -> Result<()> {
     // parse CLI args
@@ -35,7 +33,7 @@ async fn main() -> Result<()> {
     let (claim_tx, claim_rx) = mpsc::channel::<healthtechsim::message::ClaimMessage>(100);
 
     // clearinghouse -> payer
-    //TODO: abstract payer setup to not be manual
+    //TODO: abstract payer setup to not be manual ?
     let (payer1_tx, payer1_rx) = mpsc::channel::<healthtechsim::message::PayerMessage>(100);
     let (payer2_tx, payer2_rx) = mpsc::channel::<healthtechsim::message::PayerMessage>(100);
     let (payer3_tx, payer3_rx) = mpsc::channel::<healthtechsim::message::PayerMessage>(100);
@@ -50,7 +48,6 @@ async fn main() -> Result<()> {
     let (remit_tx, remit_rx) = mpsc::channel::<healthtechsim::message::RemittanceMessage>(100);
 
     // shared
-    //TODO: check correctness
     let biller_txs = Arc::new(Mutex::new(HashMap::new()));
     let remittance_history = Arc::new(Mutex::new(HashMap::new()));
 

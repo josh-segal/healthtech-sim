@@ -178,13 +178,23 @@ impl Clearinghouse {
                 if let Err(e) = tx.send(RemittanceMessage::Processed(remittance)).await {
                     eprintln!("Failed to send remittance for claim {}: {}", claim_id, e);
                 } else if self.verbose {
-                    log_claim_event("clearinghouse", &claim_id, "remittance_sent", "Remittance sent to biller");
+                    log_claim_event(
+                        "clearinghouse",
+                        &claim_id,
+                        "remittance_sent",
+                        "Remittance sent to biller",
+                    );
                 }
             }
             None => {
                 eprintln!("No return channel found for claim {}", claim_id);
                 if self.verbose {
-                    log_claim_event("clearinghouse", &claim_id, "remittance_no_channel", "No return channel found for claim");
+                    log_claim_event(
+                        "clearinghouse",
+                        &claim_id,
+                        "remittance_no_channel",
+                        "No return channel found for claim",
+                    );
                 }
             }
         }
@@ -296,7 +306,10 @@ mod tests {
             claim: mock_claim,
             response_tx,
         };
-        claim_tx.send(ClaimMessage::NewClaim(envelope)).await.unwrap();
+        claim_tx
+            .send(ClaimMessage::NewClaim(envelope))
+            .await
+            .unwrap();
         // Should not receive any message from payer
         assert!(payer_rx.try_recv().is_err());
     }
@@ -325,7 +338,10 @@ mod tests {
         });
         let mut mock_remittance = mock_remittance();
         mock_remittance.claim_id = "unknown_claim".to_string();
-        remittance_tx.send(RemittanceMessage::Processed(mock_remittance)).await.unwrap();
+        remittance_tx
+            .send(RemittanceMessage::Processed(mock_remittance))
+            .await
+            .unwrap();
         // Should not panic, just log error
     }
 
@@ -366,7 +382,10 @@ mod tests {
                 )),
             );
         }
-        remittance_tx.send(RemittanceMessage::Processed(mock_remittance)).await.unwrap();
+        remittance_tx
+            .send(RemittanceMessage::Processed(mock_remittance))
+            .await
+            .unwrap();
         // Should not panic, just log error
     }
 
@@ -405,7 +424,10 @@ mod tests {
                 },
             );
         }
-        remittance_tx.send(RemittanceMessage::Processed(mock_remittance)).await.unwrap();
+        remittance_tx
+            .send(RemittanceMessage::Processed(mock_remittance))
+            .await
+            .unwrap();
         // Should not panic, just log error
     }
 
@@ -444,8 +466,14 @@ mod tests {
             claim: claim2.clone(),
             response_tx: response_tx2,
         };
-        claim_tx.send(ClaimMessage::NewClaim(envelope1)).await.unwrap();
-        claim_tx.send(ClaimMessage::NewClaim(envelope2)).await.unwrap();
+        claim_tx
+            .send(ClaimMessage::NewClaim(envelope1))
+            .await
+            .unwrap();
+        claim_tx
+            .send(ClaimMessage::NewClaim(envelope2))
+            .await
+            .unwrap();
         // Verify both claims were sent to payer
         for _ in 0..2 {
             if let Some(PayerMessage::Adjudicate(claim)) = payer_rx.recv().await {
@@ -456,8 +484,14 @@ mod tests {
         let remittance1 = mock_remittance();
         let mut remittance2 = mock_remittance();
         remittance2.claim_id = "claim2".to_string();
-        remittance_tx.send(RemittanceMessage::Processed(remittance1)).await.unwrap();
-        remittance_tx.send(RemittanceMessage::Processed(remittance2)).await.unwrap();
+        remittance_tx
+            .send(RemittanceMessage::Processed(remittance1))
+            .await
+            .unwrap();
+        remittance_tx
+            .send(RemittanceMessage::Processed(remittance2))
+            .await
+            .unwrap();
         // Verify remittances were sent to billers
         let response1 = response_rx1.recv().await.expect("Expected remittance 1");
         let response2 = response_rx2.recv().await.expect("Expected remittance 2");

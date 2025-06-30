@@ -1,5 +1,5 @@
+use serde::Deserialize;
 use std::time::Instant;
-use serde::{Deserialize};
 
 use crate::schema::PayerClaim;
 
@@ -29,7 +29,12 @@ pub struct RemittanceRecord {
 }
 
 impl RemittanceRecord {
-    pub fn new(claim: PayerClaim, remittance: Remittance, submitted_at: Instant, remitted_at: Instant) -> Self {
+    pub fn new(
+        claim: PayerClaim,
+        remittance: Remittance,
+        submitted_at: Instant,
+        remitted_at: Instant,
+    ) -> Self {
         Self {
             claim,
             remittance,
@@ -51,24 +56,22 @@ impl RemittanceRecord {
 }
 
 impl Remittance {
-    pub fn from_claim(
-        claim: &PayerClaim,
-    ) -> Remittance {
+    pub fn from_claim(claim: &PayerClaim) -> Remittance {
         let service_line_remittances: Vec<ServiceLineRemittance> = claim
             .service_lines
             .iter()
             .map(|service_line| {
                 // Calculate remittance amounts based on service line
                 let total_charge = service_line.unit_charge_amount * service_line.units as f64;
-                
-                // TODO: replace with real calculations ?
+
+                // TODO: replace with EDI 835 ?
                 // Simple mock calculation: 80% paid, 10% coinsurance, 5% copay, 3% deductible, 2% not allowed
                 let payer_paid_amount = total_charge * 0.80;
                 let coinsurance_amount = total_charge * 0.10;
                 let copay_amount = total_charge * 0.05;
                 let deductible_amount = total_charge * 0.03;
                 let not_allowed_amount = total_charge * 0.02;
-                
+
                 ServiceLineRemittance {
                     service_line_id: service_line.service_line_id.clone(),
                     payer_paid_amount,
@@ -88,14 +91,18 @@ impl Remittance {
 
     /// Validates that the sum of remittance amounts for each service line equals the billed amount.
     pub fn validate_against_claim(&self, claim: &PayerClaim) -> Result<(), String> {
-        for (remit, service_line) in self.service_line_remittances.iter().zip(&claim.service_lines) {
+        for (remit, service_line) in self
+            .service_line_remittances
+            .iter()
+            .zip(&claim.service_lines)
+        {
             let billed = service_line.unit_charge_amount * service_line.units as f64;
             let sum = remit.payer_paid_amount
                 + remit.coinsurance_amount
                 + remit.copay_amount
                 + remit.deductible_amount
-                + remit.not_allowed_amount; //TODO: include or not?
-  
+                + remit.not_allowed_amount; // unclear if included in summation or not from instructions
+
             // Allow for floating point rounding errors
             if (sum - billed).abs() > 1e-2 {
                 return Err(format!(

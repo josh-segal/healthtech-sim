@@ -1,14 +1,14 @@
-use healthtechsim::schema::{mock_claim, PayerClaim};
-use healthtechsim::message::{ClaimMessage, PayerMessage, RemittanceMessage};
 use healthtechsim::biller::run_biller;
 use healthtechsim::clearinghouse::Clearinghouse;
-use healthtechsim::payer::Payer;
 use healthtechsim::config::Config;
+use healthtechsim::message::{ClaimMessage, PayerMessage, RemittanceMessage};
+use healthtechsim::payer::Payer;
+use healthtechsim::schema::{PayerClaim, mock_claim};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::time::timeout;
-use std::time::Duration;
 
 /// Test the full claim lifecycle: reader -> biller -> clearinghouse -> payer -> remittance back to biller.
 /// Expected: The remittance matches the original claim, and all modules interact as expected.
@@ -27,13 +27,18 @@ async fn test_full_claim_lifecycle_happy_path() {
     let (remit_tx, remit_rx) = tokio::sync::mpsc::channel::<RemittanceMessage>(1);
     let biller_txs = Arc::new(Mutex::new(HashMap::new()));
     let remittance_history = Arc::new(Mutex::new(HashMap::new()));
-    
+
     // Create a notification channel to track when biller receives remittance
     let (notify_tx, mut notify_rx) = tokio::sync::mpsc::channel::<String>(1);
-    
+
     // Spawn biller
-    tokio::spawn(run_biller(config.clone(), claim_input_rx, claim_tx, Some(notify_tx)));
-    
+    tokio::spawn(run_biller(
+        config.clone(),
+        claim_input_rx,
+        claim_tx,
+        Some(notify_tx),
+    ));
+
     // Spawn clearinghouse
     let mut payer_txs = HashMap::new();
     payer_txs.insert("medicare".to_string(), payer_tx);
@@ -45,34 +50,34 @@ async fn test_full_claim_lifecycle_happy_path() {
         remittance_history.clone(),
         false,
     );
-    tokio::spawn(async move { clearinghouse.run().await; });
-    
+    tokio::spawn(async move {
+        clearinghouse.run().await;
+    });
+
     // Spawn payer
-    let payer = Payer::new(
-        "medicare".to_string(),
-        1,
-        2,
-        remit_tx,
-        payer_rx,
-        false,
-    );
-    tokio::spawn(async move { payer.run().await; });
-    
+    let payer = Payer::new("medicare".to_string(), 1, 2, remit_tx, payer_rx, false);
+    tokio::spawn(async move {
+        payer.run().await;
+    });
+
     // Send a mock claim
     let claim = mock_claim();
     claim_input_tx.send(claim.clone()).await.unwrap();
-    
+
     // Wait for biller to receive remittance notification
     let received_claim_id = timeout(Duration::from_secs(5), notify_rx.recv())
         .await
         .expect("Timeout waiting for remittance notification")
         .expect("Expected remittance notification");
-    
+
     assert_eq!(received_claim_id, claim.claim_id);
-    
+
     // Verify the claim was processed by checking history
     let history = remittance_history.lock().await;
-    assert!(history.contains_key(&claim.claim_id), "Claim should be in history");
+    assert!(
+        history.contains_key(&claim.claim_id),
+        "Claim should be in history"
+    );
 }
 
 /// Test multiple claims for different payers, ensuring correct routing and remittance delivery.
@@ -91,13 +96,18 @@ async fn test_multiple_claims_and_payers() {
     let (remit_tx, remit_rx) = tokio::sync::mpsc::channel::<RemittanceMessage>(2);
     let biller_txs = Arc::new(Mutex::new(HashMap::new()));
     let remittance_history = Arc::new(Mutex::new(HashMap::new()));
-    
+
     // Create a notification channel to track when biller receives remittances
     let (notify_tx, mut notify_rx) = tokio::sync::mpsc::channel::<String>(2);
-    
+
     // Spawn biller
-    tokio::spawn(run_biller(config.clone(), claim_input_rx, claim_tx, Some(notify_tx)));
-    
+    tokio::spawn(run_biller(
+        config.clone(),
+        claim_input_rx,
+        claim_tx,
+        Some(notify_tx),
+    ));
+
     // Spawn clearinghouse
     let mut payer_txs = HashMap::new();
     payer_txs.insert("medicare".to_string(), payer1_tx);
@@ -110,8 +120,10 @@ async fn test_multiple_claims_and_payers() {
         remittance_history.clone(),
         false,
     );
-    tokio::spawn(async move { clearinghouse.run().await; });
-    
+    tokio::spawn(async move {
+        clearinghouse.run().await;
+    });
+
     // Spawn payers
     let payer1 = Payer::new(
         "medicare".to_string(),
@@ -129,35 +141,45 @@ async fn test_multiple_claims_and_payers() {
         payer2_rx,
         false,
     );
-    tokio::spawn(async move { payer1.run().await; });
-    tokio::spawn(async move { payer2.run().await; });
-    
+    tokio::spawn(async move {
+        payer1.run().await;
+    });
+    tokio::spawn(async move {
+        payer2.run().await;
+    });
+
     // Send two claims for different payers
     let mut claim1 = mock_claim();
     claim1.insurance.payer_id = "medicare".to_string();
     let mut claim2 = mock_claim();
     claim2.claim_id = "claim2".to_string();
     claim2.insurance.payer_id = "anthem".to_string();
-    
+
     claim_input_tx.send(claim1.clone()).await.unwrap();
     claim_input_tx.send(claim2.clone()).await.unwrap();
-    
+
     // Wait for both remittance notifications
     let received_claim_id1 = timeout(Duration::from_secs(5), notify_rx.recv())
         .await
         .expect("Timeout waiting for remittance notification 1")
         .expect("Expected remittance notification 1");
-    
+
     let received_claim_id2 = timeout(Duration::from_secs(5), notify_rx.recv())
         .await
         .expect("Timeout waiting for remittance notification 2")
         .expect("Expected remittance notification 2");
-    
+
     assert_eq!(received_claim_id1, claim1.claim_id);
     assert_eq!(received_claim_id2, claim2.claim_id);
-    
+
     // Verify both claims were processed by checking history
     let history = remittance_history.lock().await;
-    assert!(history.contains_key(&claim1.claim_id), "Claim1 should be in history");
-    assert!(history.contains_key(&claim2.claim_id), "Claim2 should be in history");
-} 
+    assert!(
+        history.contains_key(&claim1.claim_id),
+        "Claim1 should be in history"
+    );
+    assert!(
+        history.contains_key(&claim2.claim_id),
+        "Claim2 should be in history"
+    );
+}

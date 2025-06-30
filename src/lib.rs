@@ -8,4 +8,4 @@ pub mod payer;
 pub mod reader;
 pub mod remittance;
 pub mod reporter;
-pub mod schema; 
+pub mod schema;

@@ -1,11 +1,11 @@
-use std::time::Duration;
 use rand::Rng;
+use std::time::Duration;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::sleep;
 
-use crate::remittance::Remittance;
-use crate::message::{PayerMessage, RemittanceMessage};
 use crate::logging::log_claim_event;
+use crate::message::{PayerMessage, RemittanceMessage};
+use crate::remittance::Remittance;
 
 pub struct Payer {
     payer_id: String,
@@ -37,13 +37,28 @@ impl Payer {
 
     pub async fn run(mut self) {
         if self.verbose {
-            log_claim_event("payer", "-", "start", &format!("Starting payer task for {}", &self.payer_id));
+            log_claim_event(
+                "payer",
+                "-",
+                "start",
+                &format!("Starting payer task for {}", &self.payer_id),
+            );
         }
         while let Some(msg) = self.rx.recv().await {
             if let PayerMessage::Adjudicate(claim) = msg {
                 if self.verbose {
-                    log_claim_event("payer", &claim.claim_id, "received_for_adjudication", &format!("Received claim for adjudication: {}", &claim.claim_id));
-                    log_claim_event("payer", &claim.claim_id, "adjudicating", &format!("Adjudicating claim: {}", &claim.claim_id));
+                    log_claim_event(
+                        "payer",
+                        &claim.claim_id,
+                        "received_for_adjudication",
+                        &format!("Received claim for adjudication: {}", &claim.claim_id),
+                    );
+                    log_claim_event(
+                        "payer",
+                        &claim.claim_id,
+                        "adjudicating",
+                        &format!("Adjudicating claim: {}", &claim.claim_id),
+                    );
                 }
                 let delay = self.random_delay();
                 let tx = self.tx.clone();
@@ -52,19 +67,33 @@ impl Payer {
                     sleep(delay).await;
                     let remittance = Remittance::from_claim(&claim);
                     if verbose {
-                        log_claim_event("payer", &claim.claim_id, "finished_adjudication", &format!("Finished adjudication for claim: {}", &claim.claim_id));
-                        log_claim_event("payer", &claim.claim_id, "sending_remittance", &format!("Sending remittance for claim: {}", &claim.claim_id));
+                        log_claim_event(
+                            "payer",
+                            &claim.claim_id,
+                            "finished_adjudication",
+                            &format!("Finished adjudication for claim: {}", &claim.claim_id),
+                        );
+                        log_claim_event(
+                            "payer",
+                            &claim.claim_id,
+                            "sending_remittance",
+                            &format!("Sending remittance for claim: {}", &claim.claim_id),
+                        );
                     }
                     //assert sum of billed amounts equals billed amount in payer claim
                     match remittance.validate_against_claim(&claim) {
                         Ok(()) => {
                             if verbose {
-                                log_claim_event("payer", &claim.claim_id, "remittance_valid", "Remittance is valid!");
+                                log_claim_event(
+                                    "payer",
+                                    &claim.claim_id,
+                                    "remittance_valid",
+                                    "Remittance is valid!",
+                                );
                             }
                         }
                         Err(e) => {
                             eprintln!("Remittance validation error: {}", e);
-                            //TODO: panic or no?
                         }
                     }
                     let _ = tx.send(RemittanceMessage::Processed(remittance)).await;
@@ -72,7 +101,12 @@ impl Payer {
             }
         }
         if self.verbose {
-            log_claim_event("payer", "-", "shutdown", &format!("Shutting down payer task for {}", &self.payer_id));
+            log_claim_event(
+                "payer",
+                "-",
+                "shutdown",
+                &format!("Shutting down payer task for {}", &self.payer_id),
+            );
         }
     }
 
@@ -85,7 +119,6 @@ impl Payer {
 
 #[cfg(test)]
 mod tests {
-    // TODO: clean up comments
     use super::*;
     use crate::schema::mock_claim;
     use tokio::time::timeout;
@@ -117,7 +150,10 @@ mod tests {
         let mock_claim = mock_claim();
 
         // Send claim to payer for adjudication
-        payer_tx.send(PayerMessage::Adjudicate(mock_claim.clone())).await.unwrap();
+        payer_tx
+            .send(PayerMessage::Adjudicate(mock_claim.clone()))
+            .await
+            .unwrap();
 
         // Wait for remittance response with timeout
         let timeout_duration = Duration::from_secs(5);
@@ -125,13 +161,19 @@ mod tests {
             Ok(Some(RemittanceMessage::Processed(remittance))) => {
                 // Verify the remittance matches the claim
                 assert_eq!(remittance.claim_id, mock_claim.claim_id);
-                assert_eq!(remittance.service_line_remittances.len(), mock_claim.service_lines.len());
-                
+                assert_eq!(
+                    remittance.service_line_remittances.len(),
+                    mock_claim.service_lines.len()
+                );
+
                 // Verify service line remittances correspond to service lines
                 for (i, service_line) in mock_claim.service_lines.iter().enumerate() {
                     let remittance_line = &remittance.service_line_remittances[i];
-                    assert_eq!(remittance_line.service_line_id, service_line.service_line_id);
-                    
+                    assert_eq!(
+                        remittance_line.service_line_id,
+                        service_line.service_line_id
+                    );
+
                     // Verify amounts are calculated (should be non-zero for our mock calculation)
                     let total_charge = service_line.unit_charge_amount * service_line.units as f64;
                     assert!(remittance_line.payer_paid_amount > 0.0);
@@ -139,14 +181,14 @@ mod tests {
                     assert!(remittance_line.copay_amount > 0.0);
                     assert!(remittance_line.deductible_amount > 0.0);
                     assert!(remittance_line.not_allowed_amount > 0.0);
-                    
+
                     // Verify total amounts add up to approximately the total charge
-                    let total_remitted = remittance_line.payer_paid_amount 
-                        + remittance_line.coinsurance_amount 
-                        + remittance_line.copay_amount 
-                        + remittance_line.deductible_amount 
+                    let total_remitted = remittance_line.payer_paid_amount
+                        + remittance_line.coinsurance_amount
+                        + remittance_line.copay_amount
+                        + remittance_line.deductible_amount
                         + remittance_line.not_allowed_amount;
-                    
+
                     // Allow for small floating point differences
                     assert!((total_remitted - total_charge).abs() < 0.01);
                 }
@@ -187,12 +229,18 @@ mod tests {
         let claim1 = mock_claim();
         let claim2 = mock_claim(); // This will have the same ID, but that's okay for testing
 
-        payer_tx.send(PayerMessage::Adjudicate(claim1.clone())).await.unwrap();
-        payer_tx.send(PayerMessage::Adjudicate(claim2.clone())).await.unwrap();
+        payer_tx
+            .send(PayerMessage::Adjudicate(claim1.clone()))
+            .await
+            .unwrap();
+        payer_tx
+            .send(PayerMessage::Adjudicate(claim2.clone()))
+            .await
+            .unwrap();
 
         // Wait for both remittances
         let timeout_duration = Duration::from_secs(10);
-        
+
         // First remittance
         match timeout(timeout_duration, remittance_rx.recv()).await {
             Ok(Some(RemittanceMessage::Processed(remittance1))) => {
@@ -216,14 +264,7 @@ mod tests {
     async fn test_payer_invalid_claim() {
         let (payer_tx, payer_rx) = tokio::sync::mpsc::channel(1);
         let (remittance_tx, mut remittance_rx) = tokio::sync::mpsc::channel(1);
-        let payer = Payer::new(
-            "medicare".to_string(),
-            1,
-            1,
-            remittance_tx,
-            payer_rx,
-            false,
-        );
+        let payer = Payer::new("medicare".to_string(), 1, 1, remittance_tx, payer_rx, false);
         tokio::spawn(async move {
             payer.run().await;
         });
@@ -233,7 +274,10 @@ mod tests {
             service_line.unit_charge_amount = 0.0;
             service_line.units = 0;
         }
-        payer_tx.send(PayerMessage::Adjudicate(invalid_claim.clone())).await.unwrap();
+        payer_tx
+            .send(PayerMessage::Adjudicate(invalid_claim.clone()))
+            .await
+            .unwrap();
         let timeout_duration = Duration::from_secs(5);
         match timeout(timeout_duration, remittance_rx.recv()).await {
             Ok(Some(RemittanceMessage::Processed(remittance))) => {
@@ -257,14 +301,7 @@ mod tests {
     async fn test_payer_channel_closed() {
         let (payer_tx, payer_rx) = tokio::sync::mpsc::channel(1);
         let (remittance_tx, _remittance_rx) = tokio::sync::mpsc::channel(1);
-        let payer = Payer::new(
-            "medicare".to_string(),
-            1,
-            2,
-            remittance_tx,
-            payer_rx,
-            false,
-        );
+        let payer = Payer::new("medicare".to_string(), 1, 2, remittance_tx, payer_rx, false);
         let payer_handle = tokio::spawn(async move {
             payer.run().await;
         });
@@ -281,20 +318,16 @@ mod tests {
     async fn test_payer_empty_service_lines() {
         let (payer_tx, payer_rx) = tokio::sync::mpsc::channel(1);
         let (remittance_tx, mut remittance_rx) = tokio::sync::mpsc::channel(1);
-        let payer = Payer::new(
-            "medicare".to_string(),
-            1,
-            1,
-            remittance_tx,
-            payer_rx,
-            false,
-        );
+        let payer = Payer::new("medicare".to_string(), 1, 1, remittance_tx, payer_rx, false);
         tokio::spawn(async move {
             payer.run().await;
         });
         let mut empty_claim = mock_claim();
         empty_claim.service_lines.clear();
-        payer_tx.send(PayerMessage::Adjudicate(empty_claim.clone())).await.unwrap();
+        payer_tx
+            .send(PayerMessage::Adjudicate(empty_claim.clone()))
+            .await
+            .unwrap();
         let timeout_duration = Duration::from_secs(5);
         match timeout(timeout_duration, remittance_rx.recv()).await {
             Ok(Some(RemittanceMessage::Processed(remittance))) => {
@@ -311,14 +344,7 @@ mod tests {
     async fn test_payer_large_amounts() {
         let (payer_tx, payer_rx) = tokio::sync::mpsc::channel(1);
         let (remittance_tx, mut remittance_rx) = tokio::sync::mpsc::channel(1);
-        let payer = Payer::new(
-            "medicare".to_string(),
-            1,
-            1,
-            remittance_tx,
-            payer_rx,
-            false,
-        );
+        let payer = Payer::new("medicare".to_string(), 1, 1, remittance_tx, payer_rx, false);
         tokio::spawn(async move {
             payer.run().await;
         });
@@ -327,7 +353,10 @@ mod tests {
             service_line.unit_charge_amount = 1_000_000.0;
             service_line.units = 10;
         }
-        payer_tx.send(PayerMessage::Adjudicate(large_claim.clone())).await.unwrap();
+        payer_tx
+            .send(PayerMessage::Adjudicate(large_claim.clone()))
+            .await
+            .unwrap();
         let timeout_duration = Duration::from_secs(5);
         match timeout(timeout_duration, remittance_rx.recv()).await {
             Ok(Some(RemittanceMessage::Processed(remittance))) => {
@@ -366,7 +395,10 @@ mod tests {
         });
         let claim = mock_claim();
         let start_time = std::time::Instant::now();
-        payer_tx.send(PayerMessage::Adjudicate(claim)).await.unwrap();
+        payer_tx
+            .send(PayerMessage::Adjudicate(claim))
+            .await
+            .unwrap();
         let _remittance = remittance_rx.recv().await.expect("Expected remittance");
         let elapsed = start_time.elapsed();
         // Should take at least 1 second (min response time)
@@ -375,5 +407,3 @@ mod tests {
         assert!(elapsed <= Duration::from_secs(3));
     }
 }
-
-

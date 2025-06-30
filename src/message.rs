@@ -1,7 +1,7 @@
-use tokio::sync::mpsc::Sender;
-use std::time::Instant;
-use crate::schema::PayerClaim;
 use crate::remittance::{Remittance, RemittanceRecord};
+use crate::schema::PayerClaim;
+use std::time::Instant;
+use tokio::sync::mpsc::Sender;
 
 /// Struct that wraps a claim with a backward channel to send back remittance response
 #[derive(Debug)]
@@ -38,4 +38,3 @@ pub enum ClaimStatus {
     },
     Remitted(RemittanceRecord),
 }
-
