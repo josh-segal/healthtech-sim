@@ -23,7 +23,7 @@ pub struct Remittance {
 #[derive(Debug)]
 pub struct RemittanceRecord {
     claim: PayerClaim,
-    remittance: Remittance,
+    pub remittance: Remittance, //TODO: make field private
     submitted_at: Instant,
     remitted_at: Instant,
 }

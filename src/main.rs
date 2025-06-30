@@ -1,12 +1,14 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use tokio::sync::{mpsc, Mutex};
 use anyhow::Result;
+use tokio::sync::{Mutex, mpsc};
 
 mod biller;
 mod clearinghouse;
 mod config;
+mod json_faker;
+mod logging;
 mod message;
 mod payer;
 mod reader;
@@ -19,6 +21,12 @@ mod schema;
 #[tokio::main]
 async fn main() -> Result<()> {
     // parse CLI args
+
+    // for simulation
+    json_faker::write_fake_claims_jsonl("fake_claims.jsonl", 100)
+        .expect("Failed to write fake claims");
+    println!("Wrote 10 fake claims to fake_claims.jsonl");
+
     let config = config::config();
 
     // channels
@@ -46,7 +54,7 @@ async fn main() -> Result<()> {
     // shared
     //TODO: check correctness
     let biller_txs = Arc::new(Mutex::new(HashMap::new()));
-    let claim_timestamps = Arc::new(Mutex::new(HashMap::new()));
+    let remittance_history = Arc::new(Mutex::new(HashMap::new()));
 
     // spawn tasks
     // biller task
@@ -59,21 +67,48 @@ async fn main() -> Result<()> {
     ));
 
     // clearinghouse task
-    let clearinghouse = clearinghouse::Clearinghouse::new(claim_rx, payer_txs, remit_rx, biller_txs.clone(), claim_timestamps.clone());
+    let clearinghouse = clearinghouse::Clearinghouse::new(
+        claim_rx,
+        payer_txs,
+        remit_rx,
+        biller_txs.clone(),
+        remittance_history.clone(),
+        config.verbose,
+    );
     tokio::spawn(async move {
         clearinghouse.run().await;
     });
 
+    let reporter_history = remittance_history.clone();
+    tokio::spawn(async move {
+        reporter::run_reporter(reporter_history, config.verbose).await;
+    });
+
     // payer tasks
-    let payer1 = payer::Payer::new("medicare".into(), 1, 3, remit_tx.clone(), payer1_rx);
+    let payer1 = payer::Payer::new(
+        "medicare".into(),
+        10,
+        20,
+        remit_tx.clone(),
+        payer1_rx,
+        config.verbose,
+    );
     let payer2 = payer::Payer::new(
         "united_health_group".into(),
-        2,
-        4,
+        30,
+        40,
         remit_tx.clone(),
         payer2_rx,
+        config.verbose,
     );
-    let payer3 = payer::Payer::new("anthem".into(), 1, 2, remit_tx.clone(), payer3_rx);
+    let payer3 = payer::Payer::new(
+        "anthem".into(),
+        1,
+        2,
+        remit_tx.clone(),
+        payer3_rx,
+        config.verbose,
+    );
 
     tokio::spawn(async move { payer1.run().await });
     tokio::spawn(async move { payer2.run().await });
@@ -81,7 +116,9 @@ async fn main() -> Result<()> {
 
     // reader task
     tokio::spawn(async move {
-        if let Err(e) = reader::stream_claims(&config.file_path, claim_input_tx).await {
+        if let Err(e) =
+            reader::stream_claims(&config.file_path, claim_input_tx, config.verbose).await
+        {
             eprintln!("Claim stream failed: {:?}", e);
         }
     });
@@ -90,5 +127,4 @@ async fn main() -> Result<()> {
     tokio::signal::ctrl_c().await?;
     println!("Shutdown signal received.");
     Ok(())
-
 }

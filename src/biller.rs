@@ -1,9 +1,10 @@
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::time::{Duration};
+use tokio::time::Duration;
 
-use crate::schema::PayerClaim;
-use crate::message::{ClaimMessage, ClaimEnvelope};
 use crate::config::Config;
+use crate::message::{ClaimEnvelope, ClaimMessage};
+use crate::schema::PayerClaim;
+use crate::logging::log_claim_event;
 
 /// Biller task that processes claims received over a PayerClaim channel.
 ///
@@ -23,16 +24,18 @@ pub async fn run_biller(
 ) -> anyhow::Result<()> {
     let interval = Duration::from_secs(config.ingest_rate);
     let mut ticker = tokio::time::interval(interval);
-
+    let verbose = config.verbose;
+    if verbose {
+        log_claim_event("biller", "-", "start", "Starting biller task");
+    }
     while let Some(claim) = rx.recv().await {
         // ingest throttle
         ticker.tick().await;
+        if verbose {
+            log_claim_event("biller", &claim.claim_id, "received_payer_claim", &format!("Received PayerClaim: Claim ID: {}", &claim.claim_id));
+        }
         // Create a one-time channel for this claim
         let (rem_tx, mut rem_rx) = tokio::sync::mpsc::channel(1);
-
-        // clone for logging
-        let claim_id = claim.claim_id.clone();
-        
 
         #[cfg(test)]
         let test_notify_opt = test_notify.clone();
@@ -40,30 +43,42 @@ pub async fn run_biller(
         #[cfg(not(test))]
         let test_notify_opt: Option<Sender<String>> = None;
 
+        // clone for logging
+        let claim_id = claim.claim_id.clone();
+
         // spawn a task to wait for the remittance for this claim
-        tokio::spawn(async move {
-            if let Some(response) = rem_rx.recv().await {
-                println!("Biller received remittance for claim {}: {:?}", claim_id, response);
-                //TODO: update stats AR etc
-                if let Some(tx) = test_notify_opt {
-                    let _ = tx.send(claim_id).await;
+        tokio::spawn({
+            let claim_id = claim_id.clone();
+            async move {
+                if let Some(_response) = rem_rx.recv().await {
+                    if verbose {
+                        log_claim_event("biller", &claim_id, "received_remittance", &format!("Received remittance for claim: {}", &claim_id));
+                    }
+                    if let Some(tx) = test_notify_opt {
+                        let _ = tx.send(claim_id).await;
+                    }
                 }
             }
         });
+
         let envelope = ClaimEnvelope {
             claim,
             response_tx: rem_tx,
         };
 
+        if verbose {
+            log_claim_event("biller", &claim_id, "sending_claim_envelope", &format!("Sending claim envelope to clearinghouse: {}", &claim_id));
+        }
+
         if tx.send(ClaimMessage::NewClaim(envelope)).await.is_err() {
             eprintln!("Clearinghouse dropped");
-            return Err(anyhow::anyhow!("Clearinghouse channel dropped"))
+            return Err(anyhow::anyhow!("Clearinghouse channel dropped"));
         }
     }
-
-
-    Ok(())
-
+    if verbose {
+        log_claim_event("biller", "-", "shutdown", "Shutting down biller task");
+    }
+    Ok(()) //TODO: is the biller task shutting down too early?
 }
 
 #[cfg(test)]
@@ -75,9 +90,10 @@ mod tests {
     #[tokio::test]
     async fn test_run_biller() {
         // mock config
-        let mock_config = Config{ 
-            file_path: "mock_path.json".to_string(), 
-            ingest_rate: 1 
+        let mock_config = Config {
+            file_path: "mock_path.json".to_string(),
+            ingest_rate: 1,
+            verbose: true,
         };
 
         // input channel for claims
@@ -102,16 +118,20 @@ mod tests {
         if let Some(ClaimMessage::NewClaim(envelope)) = out_rx.recv().await {
             assert_eq!(envelope.claim.claim_id, "abc123");
 
-        // simulate remittance being returned
-        let mock_remittance = mock_remittance();
-        let _ = envelope.response_tx
-            .send(RemittanceMessage::Processed(mock_remittance))
-            .await;
+            // simulate remittance being returned
+            let mock_remittance = mock_remittance();
+            let _ = envelope
+                .response_tx
+                .send(RemittanceMessage::Processed(mock_remittance))
+                .await;
         } else {
             panic!("Expected ClaimMessage::NewClaim");
         }
 
-        let notified_id = notify_rx.recv().await.expect("Expected remittance notification");
+        let notified_id = notify_rx
+            .recv()
+            .await
+            .expect("Expected remittance notification");
         assert_eq!(notified_id, "abc123");
     }
 }

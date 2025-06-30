@@ -5,6 +5,7 @@ use tokio::time::sleep;
 
 use crate::remittance::Remittance;
 use crate::message::{PayerMessage, RemittanceMessage};
+use crate::logging::log_claim_event;
 
 pub struct Payer {
     payer_id: String,
@@ -12,6 +13,7 @@ pub struct Payer {
     max_response_time_secs: u64,
     rx: Receiver<PayerMessage>,
     tx: Sender<RemittanceMessage>,
+    verbose: bool,
 }
 
 impl Payer {
@@ -21,6 +23,7 @@ impl Payer {
         max_response_time_secs: u64,
         tx: Sender<RemittanceMessage>,
         rx: Receiver<PayerMessage>,
+        verbose: bool,
     ) -> Self {
         Self {
             payer_id,
@@ -28,32 +31,48 @@ impl Payer {
             max_response_time_secs,
             tx,
             rx,
+            verbose,
         }
     }
 
     pub async fn run(mut self) {
+        if self.verbose {
+            log_claim_event("payer", "-", "start", &format!("Starting payer task for {}", &self.payer_id));
+        }
         while let Some(msg) = self.rx.recv().await {
             if let PayerMessage::Adjudicate(claim) = msg {
+                if self.verbose {
+                    log_claim_event("payer", &claim.claim_id, "received_for_adjudication", &format!("Received claim for adjudication: {}", &claim.claim_id));
+                    log_claim_event("payer", &claim.claim_id, "adjudicating", &format!("Adjudicating claim: {}", &claim.claim_id));
+                }
                 let delay = self.random_delay();
                 let tx = self.tx.clone();
+                let verbose = self.verbose;
                 tokio::spawn(async move {
                     sleep(delay).await;
                     let remittance = Remittance::from_claim(&claim);
-
+                    if verbose {
+                        log_claim_event("payer", &claim.claim_id, "finished_adjudication", &format!("Finished adjudication for claim: {}", &claim.claim_id));
+                        log_claim_event("payer", &claim.claim_id, "sending_remittance", &format!("Sending remittance for claim: {}", &claim.claim_id));
+                    }
                     //assert sum of billed amounts equals billed amount in payer claim
                     match remittance.validate_against_claim(&claim) {
                         Ok(()) => {
-                            println!("Remittance is valid!");
+                            if verbose {
+                                log_claim_event("payer", &claim.claim_id, "remittance_valid", "Remittance is valid!");
+                            }
                         }
                         Err(e) => {
                             eprintln!("Remittance validation error: {}", e);
                             //TODO: panic or no?
                         }
                     }
-
                     let _ = tx.send(RemittanceMessage::Processed(remittance)).await;
                 });
             }
+        }
+        if self.verbose {
+            log_claim_event("payer", "-", "shutdown", &format!("Shutting down payer task for {}", &self.payer_id));
         }
     }
 
@@ -84,6 +103,7 @@ mod tests {
             2, // max response time 2 seconds
             remittance_tx,
             payer_rx,
+            true,
         );
 
         // Spawn payer task
@@ -151,6 +171,7 @@ mod tests {
             1, // max response time 1 second (fixed for predictable testing)
             remittance_tx,
             payer_rx,
+            true,
         );
 
         // Spawn payer task

@@ -5,75 +5,84 @@ use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 use tokio::time;
 
-use crate::remittance::Remittance;
+use crate::message::ClaimStatus;
 
 /// Reporter task that periodically logs AR aging and patient-level summaries.
 pub async fn run_reporter(
-    remittance_history: Arc<Mutex<HashMap<String, (Instant, Remittance)>>>,
+    history: Arc<Mutex<HashMap<String, ClaimStatus>>>,
+    verbose: bool,
 ) {
+    if verbose {
+        println!("[reporter] Starting reporter task");
+    }
     let mut interval = time::interval(Duration::from_secs(5));
 
     loop {
         interval.tick().await;
-        let report = {
-            let history = remittance_history.lock().await;
-            // generate_report(&history)
-        };
-        println!("report goes here");
+        let records = history.lock().await;
+
+        print_combined_report(&records);
     }
 }
 
-// /// Computes AR aging and patient-level summaries.
-// fn generate_report(
-//     history: &HashMap<String, (Instant, Remittance)>,
-// ) -> String {
-//     let now = Instant::now();
+fn print_combined_report(records: &HashMap<String, ClaimStatus>) {
+    #[derive(Default)]
+    struct Totals {
+        copay: f64,
+        coins: f64,
+        deduct: f64,
+    }
 
-//     let mut ar_buckets = [0, 0, 0, 0]; // 0–1, 1–2, 2–3, 3+ min
-//     let mut patient_totals: HashMap<String, (f64, f64, f64)> = HashMap::new();
+    let mut aging_buckets: HashMap<String, [u32; 4]> = HashMap::new();
+    let mut patient_summary: HashMap<String, Totals> = HashMap::new();
 
-//     for (_claim_id, (submitted_at, remittance)) in history {
-//         let age_min = elapsed_minutes(*submitted_at, now);
+    for status in records.values() {
+        // AR Aging Report logic 
+        let (payer_id, age_secs) = match status {
+            ClaimStatus::Submitted { claim, submitted_at } => (
+                claim.insurance.payer_id.clone(),
+                Instant::now().duration_since(*submitted_at).as_secs(),
+            ),
+            ClaimStatus::Remitted(record) => (
+                record.payer_id().to_string(),
+                record.elapsed().as_secs(),
+            ),
+        };
 
-//         match age_min {
-//             0 => ar_buckets[0] += 1,
-//             1 => ar_buckets[1] += 1,
-//             2 => ar_buckets[2] += 1,
-//             _ => ar_buckets[3] += 1,
-//         }
+        let bucket = match age_secs {
+            0..=59 => 0,
+            60..=119 => 1,
+            120..=179 => 2,
+            _ => 3,
+        };
 
-//         let key = remittance.patient_id.clone();
-//         let entry = patient_totals.entry(key).or_insert((0.0, 0.0, 0.0));
-//         entry.0 += remittance.total_copay();
-//         entry.1 += remittance.total_coinsurance();
-//         entry.2 += remittance.total_deductible();
-//     }
+        aging_buckets.entry(payer_id.clone()).or_insert([0; 4])[bucket] += 1;
 
-//     format!(
-//         "\n====== AR Aging Report ======\n\
-//         0–1 min: {}\n\
-//         1–2 min: {}\n\
-//         2–3 min: {}\n\
-//         3+ min: {}\n\
-//         \n====== Patient Summary Stats ======\n{}",
-//         ar_buckets[0],
-//         ar_buckets[1],
-//         ar_buckets[2],
-//         ar_buckets[3],
-//         format_patient_stats(&patient_totals)
-//     )
-// }
+        // Patient Financial Summary logic 
+        if let ClaimStatus::Remitted(record) = status {
+            let entry = patient_summary
+                .entry(record.patient_id().to_string())
+                .or_default();
 
-// /// Pretty-print patient copay/coinsurance/deductible totals.
-// fn format_patient_stats(
-//     totals: &HashMap<String, (f64, f64, f64)>,
-// ) -> String {
-//     let mut lines = vec![];
-//     for (patient_id, (copay, coinsurance, deductible)) in totals {
-//         lines.push(format!(
-//             "{} => Copay: ${:.2}, Coinsurance: ${:.2}, Deductible: ${:.2}",
-//             patient_id, copay, coinsurance, deductible
-//         ));
-//     }
-//     lines.join("\n")
-// }
+            for line in &record.remittance.service_line_remittances {
+                entry.copay += line.copay_amount;
+                entry.coins += line.coinsurance_amount;
+                entry.deduct += line.deductible_amount;
+            }
+        }
+    }
+
+    println!("\n--- 🧾 AR Aging Report ---");
+    for (payer, [b0, b1, b2, b3]) in aging_buckets {
+        println!("{payer}: 0–1m: {b0}, 1–2m: {b1}, 2–3m: {b2}, 3+m: {b3}");
+    }
+
+    println!("\n--- 👤 Patient Financial Summary ---");
+    for (patient, totals) in patient_summary {
+        println!(
+            "{patient}: Copay: ${:.2}, Coinsurance: ${:.2}, Deductible: ${:.2}",
+            totals.copay, totals.coins, totals.deduct
+        );
+    }
+}
+
