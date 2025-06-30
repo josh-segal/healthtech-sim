@@ -1,8 +1,8 @@
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration};
 
 use crate::schema::PayerClaim;
-use crate::message::{ClaimMessage, ClaimEnvelope, RemittanceMessage};
+use crate::message::{ClaimMessage, ClaimEnvelope};
 use crate::config::Config;
 
 /// Biller task that processes claims received over a PayerClaim channel.
@@ -14,6 +14,7 @@ use crate::config::Config;
 /// - Sends the envelope to the clearinghouse via the `ClaimMessage` channel.
 ///
 /// The ingest rate is controlled by the configured interval.
+// TODO: possibly add struct to enable multiple billers in program
 pub async fn run_biller(
     config: Config,
     mut rx: Receiver<PayerClaim>,
@@ -21,21 +22,25 @@ pub async fn run_biller(
     #[cfg(test)] test_notify: Option<Sender<String>>, //optional notifcation for remittance
 ) -> anyhow::Result<()> {
     let interval = Duration::from_secs(config.ingest_rate as u64);
+    let mut ticker = tokio::time::interval(interval);
 
     while let Some(claim) = rx.recv().await {
+        // ingest throttle
+        ticker.tick().await;
         // Create a one-time channel for this claim
         let (rem_tx, mut rem_rx) = tokio::sync::mpsc::channel(1);
 
         // clone for logging
         let claim_id = claim.claim_id.clone();
-        // spawn a task to wait for the remittance for this claim
+        
 
         #[cfg(test)]
         let test_notify_opt = test_notify.clone();
 
         #[cfg(not(test))]
         let test_notify_opt: Option<Sender<String>> = None;
-
+        
+        // spawn a task to wait for the remittance for this claim
         tokio::spawn(async move {
             if let Some(response) = rem_rx.recv().await {
                 println!("Biller received remittance for claim {}: {:?}", claim_id, response);
@@ -52,9 +57,8 @@ pub async fn run_biller(
 
         if tx.send(ClaimMessage::NewClaim(envelope)).await.is_err() {
             eprintln!("Clearinghouse dropped");
-            break;
+            return Err(anyhow::anyhow!("Clearinghouse channel dropped"))
         }
-        sleep(interval).await;
     }
 
 
@@ -65,6 +69,7 @@ pub async fn run_biller(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::message::RemittanceMessage;
     use crate::{remittance::mock_remittance, schema::mock_claim};
 
     #[tokio::test]

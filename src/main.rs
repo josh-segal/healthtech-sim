@@ -4,6 +4,7 @@ mod remittance;
 mod message;
 mod reader;
 mod biller;
+mod clearinghouse;
 
 // TODO: runtime execute tasks on multiple threads (each thread using async concurrency) to make use of multiple CPU cores?
 // concurrency + parallelism
