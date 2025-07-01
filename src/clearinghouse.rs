@@ -54,20 +54,10 @@ impl Clearinghouse {
         loop {
             tokio::select! {
                 Some(msg) = self.claim_rx.recv() => {
-                    if let ClaimMessage::NewClaim(envelope) = msg { // redundent unless add more ClaimMessage variants... leaving for extensibility
-                        if self.verbose {
-                            log_claim_event("clearinghouse", &envelope.claim.claim_id, "handle_new_claim", &format!("Handling new claim: {}", &envelope.claim.claim_id));
-                        }
-                        self.handle_claim(envelope).await;
-                    }
+                    self.process_claim_message(msg).await;
                 }
                 Some(msg) = self.remittance_rx.recv() => {
-                    if let RemittanceMessage::Processed(remittance) = msg { // redundent unless add more RemittanceMessage variants... leaving for extensibility
-                        if self.verbose {
-                            log_claim_event("clearinghouse", &remittance.claim_id, "handle_remittance", &format!("Handling remittance for claim: {}", &remittance.claim_id));
-                        }
-                        self.handle_remittance(remittance).await;
-                    }
+                    self.process_remittance_message(msg).await;
                 }
                 else => {
                     break;
@@ -81,6 +71,24 @@ impl Clearinghouse {
                 "shutdown",
                 "Shutting down clearinghouse task",
             );
+        }
+    }
+
+    async fn process_claim_message(&mut self, msg: ClaimMessage) {
+        if let ClaimMessage::NewClaim(envelope) = msg {
+            if self.verbose {
+                log_claim_event("clearinghouse", &envelope.claim.claim_id, "handle_new_claim", &format!("Handling new claim: {}", &envelope.claim.claim_id));
+            }
+            self.handle_claim(envelope).await;
+        }
+    }
+
+    async fn process_remittance_message(&mut self, msg: RemittanceMessage) {
+        if let RemittanceMessage::Processed(remittance) = msg {
+            if self.verbose {
+                log_claim_event("clearinghouse", &remittance.claim_id, "handle_remittance", &format!("Handling remittance for claim: {}", &remittance.claim_id));
+            }
+            self.handle_remittance(remittance).await;
         }
     }
 

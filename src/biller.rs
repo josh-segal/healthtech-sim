@@ -31,64 +31,68 @@ pub async fn run_biller(
         log_claim_event("biller", "-", "start", "Starting biller task");
     }
     while let Some(claim) = rx.recv().await {
-        // ingest throttle
         ticker.tick().await;
-        if verbose {
-            log_claim_event(
-                "biller",
-                &claim.claim_id,
-                "received_payer_claim",
-                &format!("Received PayerClaim: Claim ID: {}", &claim.claim_id),
-            );
-        }
-        // Create a one-time channel for this claim
-        let (rem_tx, mut rem_rx) = tokio::sync::mpsc::channel(1);
+        process_claim(claim, &tx, &test_notify, verbose).await?;
+    }
+    Ok(())
+}
 
-        let test_notify_opt = test_notify.clone();
+async fn process_claim(
+    claim: PayerClaim,
+    tx: &Sender<ClaimMessage>,
+    test_notify: &Option<Sender<String>>,
+    verbose: bool,
+) -> anyhow::Result<()> {
+    if verbose {
+        log_claim_event(
+            "biller",
+            &claim.claim_id,
+            "received_payer_claim",
+            &format!("Received PayerClaim: Claim ID: {}", &claim.claim_id),
+        );
+    }
+    let (rem_tx, rem_rx) = tokio::sync::mpsc::channel(1);
+    let test_notify_opt = test_notify.clone();
+    let claim_id = claim.claim_id.clone();
+    tokio::spawn(listen_for_remittance(rem_rx, claim_id.clone(), test_notify_opt, verbose));
+    let envelope = ClaimEnvelope {
+        claim,
+        response_tx: rem_tx,
+    };
+    if verbose {
+        log_claim_event(
+            "biller",
+            &claim_id,
+            "sending_claim_envelope",
+            &format!("Sending claim envelope to clearinghouse: {}", &claim_id),
+        );
+    }
+    if tx.send(ClaimMessage::NewClaim(envelope)).await.is_err() {
+        eprintln!("Clearinghouse dropped");
+        return Err(anyhow::anyhow!("Clearinghouse channel dropped"));
+    }
+    Ok(())
+}
 
-        // clone for logging
-        let claim_id = claim.claim_id.clone();
-
-        // spawn a task to wait for the remittance for this claim
-        tokio::spawn({
-            let claim_id = claim_id.clone();
-            async move {
-                if let Some(_response) = rem_rx.recv().await {
-                    if verbose {
-                        log_claim_event(
-                            "biller",
-                            &claim_id,
-                            "received_remittance",
-                            &format!("Received remittance for claim: {}", &claim_id),
-                        );
-                    }
-                    if let Some(tx) = test_notify_opt {
-                        let _ = tx.send(claim_id).await;
-                    }
-                }
-            }
-        });
-
-        let envelope = ClaimEnvelope {
-            claim,
-            response_tx: rem_tx,
-        };
-
+async fn listen_for_remittance(
+    mut rem_rx: tokio::sync::mpsc::Receiver<crate::message::RemittanceMessage>,
+    claim_id: String,
+    test_notify_opt: Option<Sender<String>>,
+    verbose: bool,
+) {
+    if let Some(_response) = rem_rx.recv().await {
         if verbose {
             log_claim_event(
                 "biller",
                 &claim_id,
-                "sending_claim_envelope",
-                &format!("Sending claim envelope to clearinghouse: {}", &claim_id),
+                "received_remittance",
+                &format!("Received remittance for claim: {}", &claim_id),
             );
         }
-
-        if tx.send(ClaimMessage::NewClaim(envelope)).await.is_err() {
-            eprintln!("Clearinghouse dropped");
-            return Err(anyhow::anyhow!("Clearinghouse channel dropped"));
+        if let Some(tx) = test_notify_opt {
+            let _ = tx.send(claim_id).await;
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]

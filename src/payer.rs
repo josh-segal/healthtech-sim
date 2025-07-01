@@ -54,60 +54,7 @@ impl Payer {
             );
         }
         while let Some(msg) = self.rx.recv().await {
-            if let PayerMessage::Adjudicate(claim) = msg {
-                if self.verbose {
-                    log_claim_event(
-                        "payer",
-                        &claim.claim_id,
-                        "received_for_adjudication",
-                        &format!("Received claim for adjudication: {}", &claim.claim_id),
-                    );
-                    log_claim_event(
-                        "payer",
-                        &claim.claim_id,
-                        "adjudicating",
-                        &format!("Adjudicating claim: {}", &claim.claim_id),
-                    );
-                }
-                let delay = self.random_delay();
-                let tx = self.tx.clone();
-                let verbose = self.verbose;
-                tokio::spawn(async move {
-                    sleep(delay).await;
-                    let remittance = Remittance::from_claim(&claim);
-                    if verbose {
-                        log_claim_event(
-                            "payer",
-                            &claim.claim_id,
-                            "finished_adjudication",
-                            &format!("Finished adjudication for claim: {}", &claim.claim_id),
-                        );
-                        log_claim_event(
-                            "payer",
-                            &claim.claim_id,
-                            "sending_remittance",
-                            &format!("Sending remittance for claim: {}", &claim.claim_id),
-                        );
-                    }
-                    //assert sum of billed amounts equals billed amount in payer claim
-                    match remittance.validate_against_claim(&claim) {
-                        Ok(()) => {
-                            if verbose {
-                                log_claim_event(
-                                    "payer",
-                                    &claim.claim_id,
-                                    "remittance_valid",
-                                    "Remittance is valid!",
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("Remittance validation error: {}", e);
-                        }
-                    }
-                    let _ = tx.send(RemittanceMessage::Processed(remittance)).await;
-                });
-            }
+            self.handle_payer_message(msg);
         }
         if self.verbose {
             log_claim_event(
@@ -117,6 +64,64 @@ impl Payer {
                 &format!("Shutting down payer task for {}", &self.payer_id),
             );
         }
+    }
+
+    fn handle_payer_message(&self, msg: PayerMessage) {
+        if let PayerMessage::Adjudicate(claim) = msg {
+            if self.verbose {
+                log_claim_event(
+                    "payer",
+                    &claim.claim_id,
+                    "received_for_adjudication",
+                    &format!("Received claim for adjudication: {}", &claim.claim_id),
+                );
+                log_claim_event(
+                    "payer",
+                    &claim.claim_id,
+                    "adjudicating",
+                    &format!("Adjudicating claim: {}", &claim.claim_id),
+                );
+            }
+            let delay = self.random_delay();
+            let tx = self.tx.clone();
+            let verbose = self.verbose;
+            tokio::spawn(Self::adjudicate_and_send_remittance(claim, tx, delay, verbose));
+        }
+    }
+
+    async fn adjudicate_and_send_remittance(claim: crate::schema::PayerClaim, tx: Sender<RemittanceMessage>, delay: std::time::Duration, verbose: bool) {
+        sleep(delay).await;
+        let remittance = Remittance::from_claim(&claim);
+        if verbose {
+            log_claim_event(
+                "payer",
+                &claim.claim_id,
+                "finished_adjudication",
+                &format!("Finished adjudication for claim: {}", &claim.claim_id),
+            );
+            log_claim_event(
+                "payer",
+                &claim.claim_id,
+                "sending_remittance",
+                &format!("Sending remittance for claim: {}", &claim.claim_id),
+            );
+        }
+        match remittance.validate_against_claim(&claim) {
+            Ok(()) => {
+                if verbose {
+                    log_claim_event(
+                        "payer",
+                        &claim.claim_id,
+                        "remittance_valid",
+                        "Remittance is valid!",
+                    );
+                }
+            }
+            Err(e) => {
+                eprintln!("Remittance validation error: {}", e);
+            }
+        }
+        let _ = tx.send(RemittanceMessage::Processed(remittance)).await;
     }
 
     /// Generate a random processing delay within configured range

@@ -64,27 +64,7 @@ impl Remittance {
         let service_line_remittances: Vec<ServiceLineRemittance> = claim
             .service_lines
             .iter()
-            .map(|service_line| {
-                // Calculate remittance amounts based on service line
-                let total_charge = service_line.unit_charge_amount * service_line.units as f64;
-
-                // TODO: replace with EDI 835 ?
-                // Simple mock calculation: 80% paid, 10% coinsurance, 5% copay, 3% deductible, 2% not allowed
-                let payer_paid_amount = total_charge * 0.80;
-                let coinsurance_amount = total_charge * 0.10;
-                let copay_amount = total_charge * 0.05;
-                let deductible_amount = total_charge * 0.03;
-                let not_allowed_amount = total_charge * 0.02;
-
-                ServiceLineRemittance {
-                    service_line_id: service_line.service_line_id.clone(),
-                    payer_paid_amount,
-                    coinsurance_amount,
-                    copay_amount,
-                    deductible_amount,
-                    not_allowed_amount,
-                }
-            })
+            .map(|service_line| calculate_service_line_remittance(service_line))
             .collect();
 
         Remittance {
@@ -103,23 +83,43 @@ impl Remittance {
             .iter()
             .zip(&claim.service_lines)
         {
-            let billed = service_line.unit_charge_amount * service_line.units as f64;
-            let sum = remit.payer_paid_amount
-                + remit.coinsurance_amount
-                + remit.copay_amount
-                + remit.deductible_amount
-                + remit.not_allowed_amount; // unclear if included in summation or not from instructions
-
-            // Allow for floating point rounding errors
-            if (sum - billed).abs() > 1e-2 {
-                return Err(format!(
-                    "Service line {}: remittance sum {:.2} does not match billed amount {:.2}",
-                    remit.service_line_id, sum, billed
-                ));
-            }
+            validate_service_line_remittance(remit, service_line)?;
         }
         Ok(())
     }
+}
+
+fn calculate_service_line_remittance(service_line: &crate::schema::ServiceLine) -> ServiceLineRemittance {
+    let total_charge = service_line.unit_charge_amount * service_line.units as f64;
+    let payer_paid_amount = total_charge * 0.80;
+    let coinsurance_amount = total_charge * 0.10;
+    let copay_amount = total_charge * 0.05;
+    let deductible_amount = total_charge * 0.03;
+    let not_allowed_amount = total_charge * 0.02;
+    ServiceLineRemittance {
+        service_line_id: service_line.service_line_id.clone(),
+        payer_paid_amount,
+        coinsurance_amount,
+        copay_amount,
+        deductible_amount,
+        not_allowed_amount,
+    }
+}
+
+fn validate_service_line_remittance(remit: &ServiceLineRemittance, service_line: &crate::schema::ServiceLine) -> Result<(), String> {
+    let billed = service_line.unit_charge_amount * service_line.units as f64;
+    let sum = remit.payer_paid_amount
+        + remit.coinsurance_amount
+        + remit.copay_amount
+        + remit.deductible_amount
+        + remit.not_allowed_amount;
+    if (sum - billed).abs() > 1e-2 {
+        return Err(format!(
+            "Service line {}: remittance sum {:.2} does not match billed amount {:.2}",
+            remit.service_line_id, sum, billed
+        ));
+    }
+    Ok(())
 }
 
 /// Mock remittance for testing
