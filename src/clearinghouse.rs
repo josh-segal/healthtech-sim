@@ -75,21 +75,19 @@ impl Clearinghouse {
     }
 
     async fn process_claim_message(&mut self, msg: ClaimMessage) {
-        if let ClaimMessage::NewClaim(envelope) = msg {
-            if self.verbose {
-                log_claim_event("clearinghouse", &envelope.claim.claim_id, "handle_new_claim", &format!("Handling new claim: {}", &envelope.claim.claim_id));
-            }
-            self.handle_claim(envelope).await;
+        let ClaimMessage::NewClaim(envelope) = msg;
+        if self.verbose {
+            log_claim_event("clearinghouse", &envelope.claim.claim_id, "handle_new_claim", &format!("Handling new claim: {}", &envelope.claim.claim_id));
         }
+        self.handle_claim(envelope).await;
     }
 
     async fn process_remittance_message(&mut self, msg: RemittanceMessage) {
-        if let RemittanceMessage::Processed(remittance) = msg {
-            if self.verbose {
-                log_claim_event("clearinghouse", &remittance.claim_id, "handle_remittance", &format!("Handling remittance for claim: {}", &remittance.claim_id));
-            }
-            self.handle_remittance(remittance).await;
+        let RemittanceMessage::Processed(remittance) = msg;
+        if self.verbose {
+            log_claim_event("clearinghouse", &remittance.claim_id, "handle_remittance", &format!("Handling remittance for claim: {}", &remittance.claim_id));
         }
+        self.handle_remittance(remittance).await;
     }
 
     /// Process a new claim from a biller
