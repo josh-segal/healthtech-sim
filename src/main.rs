@@ -132,7 +132,14 @@ fn setup_payer_tasks(
         payer2_rx,
         verbose,
     );
-    let payer3 = payer::Payer::new("anthem".into(), 1, 2, remit_tx.clone(), payer3_rx, verbose);
+    let payer3 = payer::Payer::new(
+        "anthem".into(),
+         1,
+          2,
+           remit_tx.clone(), 
+           payer3_rx, 
+           verbose
+    );
     tokio::spawn(async move { payer1.run().await });
     tokio::spawn(async move { payer2.run().await });
     tokio::spawn(async move { payer3.run().await });
