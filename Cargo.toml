@@ -22,3 +22,5 @@ rand = "0.9"
 fake = "2.6"
 chrono = { version = "0.4", features = ["serde"] }
 tempfile = "3.20.0"
+prettytable = "0.10"
+colored = "2"

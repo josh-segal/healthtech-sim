@@ -6,6 +6,8 @@ use tokio::sync::Mutex;
 use tokio::time;
 
 use crate::message::ClaimStatus;
+use prettytable::{Table, Row, Cell};
+use colored::*;
 
 /// Periodically generate and display business reports
 /// 
@@ -45,20 +47,72 @@ fn print_combined_report(records: &HashMap<String, ClaimStatus>) {
         update_patient_summary(status, &mut patient_summary);
     }
 
-    println!("\n--- AR Aging Report ---");
-    for (payer, [b0, b1, b2, b3]) in aging_buckets {
-        println!("{payer}: 0–1m: {b0}, 1–2m: {b1}, 2–3m: {b2}, 3+m: {b3}");
+    // AR Aging Report
+    println!("{}", "\n--- AR Aging Report ---".bold().blue());
+    let mut ar_table = Table::new();
+    ar_table.add_row(Row::new(vec![
+        Cell::new("Payer").style_spec("bFc"),
+        Cell::new("0–1m").style_spec("bFc"),
+        Cell::new("1–2m").style_spec("bFc"),
+        Cell::new("2–3m").style_spec("bFc"),
+        Cell::new("3+m").style_spec("bFc"),
+    ]));
+    for (payer, [b0, b1, b2, b3]) in &aging_buckets {
+        ar_table.add_row(Row::new(vec![
+            Cell::new(payer),
+            Cell::new(&b0.to_string()),
+            Cell::new(&b1.to_string()),
+            Cell::new(&b2.to_string()),
+            Cell::new(&b3.to_string()),
+        ]));
     }
-    println!("");
+    // Add total outstanding claims row
+    let (total_b0, total_b1, total_b2, total_b3): (u32, u32, u32, u32) = aging_buckets.values().fold((0, 0, 0, 0), |acc, buckets| {
+        (acc.0 + buckets[0], acc.1 + buckets[1], acc.2 + buckets[2], acc.3 + buckets[3])
+    });
+    let total_outstanding = total_b0 + total_b1 + total_b2 + total_b3;
+    ar_table.add_row(Row::new(vec![
+        Cell::new("TOTAL OUTSTANDING").style_spec("bFc"),
+        Cell::new(&total_b0.to_string()),
+        Cell::new(&total_b1.to_string()),
+        Cell::new(&total_b2.to_string()),
+        Cell::new(&total_b3.to_string()),
+    ]));
+    ar_table.add_row(Row::new(vec![
+        Cell::new("").style_spec(""),
+        Cell::new("").style_spec("") ,
+        Cell::new("").style_spec("") ,
+        Cell::new("").style_spec("") ,
+        Cell::new(&format!("Total Claims: {}", total_outstanding)).style_spec("bFc"),
+    ]));
+    ar_table.printstd();
 
-    println!("\n--- Patient Financial Summary ---");
-    for (patient, totals) in patient_summary {
-        println!(
-            "{patient}: Copay: ${:.2}, Coinsurance: ${:.2}, Deductible: ${:.2}",
-            totals.copay, totals.coins, totals.deduct
-        );
+    // Patient Financial Summary
+    println!("{}", "\n--- Patient Financial Summary ---".bold().blue());
+    let mut pf_table = Table::new();
+    pf_table.add_row(Row::new(vec![
+        Cell::new("Patient").style_spec("bFc"),
+        Cell::new("Copay").style_spec("bFc"),
+        Cell::new("Coinsurance").style_spec("bFc"),
+        Cell::new("Deductible").style_spec("bFc"),
+    ]));
+    for (patient, totals) in &patient_summary {
+        pf_table.add_row(Row::new(vec![
+            Cell::new(patient),
+            Cell::new(&format!("${:.2}", totals.copay)),
+            Cell::new(&format!("${:.2}", totals.coins)),
+            Cell::new(&format!("${:.2}", totals.deduct)),
+        ]));
     }
-    println!("");
+    // Add total number of patients row
+    let total_patients = patient_summary.len();
+    pf_table.add_row(Row::new(vec![
+        Cell::new("TOTAL PATIENTS").style_spec("bFc"),
+        Cell::new("").style_spec("") ,
+        Cell::new("").style_spec("") ,
+        Cell::new(&format!("{}", total_patients)).style_spec("bFc"),
+    ]));
+    pf_table.printstd();
 }
 
 fn update_aging_buckets(status: &ClaimStatus, aging_buckets: &mut HashMap<String, [u32; 4]>) {
