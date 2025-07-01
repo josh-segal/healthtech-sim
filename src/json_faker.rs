@@ -12,6 +12,10 @@ use rand::seq::IndexedRandom;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
+/// Generate a realistic fake healthcare claim for testing
+/// 
+/// Creates claims with random but valid patient, provider, and billing data
+/// Uses common payer IDs and realistic procedure codes
 pub fn fake_payer_claim() -> PayerClaim {
     use crate::schema::*;
     let mut rng = rand::rng();
@@ -92,6 +96,10 @@ pub fn fake_payer_claim() -> PayerClaim {
     }
 }
 
+/// Write multiple fake claims to a JSONL file for simulation
+/// 
+/// Creates n claims and writes them as JSON lines to the specified path
+/// Used to generate test data for the claim processing simulation
 pub fn write_fake_claims_jsonl(path: &str, n: usize) -> std::io::Result<()> {
     let file = File::create(path)?;
     let mut writer = BufWriter::new(file);

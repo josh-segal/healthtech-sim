@@ -10,6 +10,10 @@ use crate::logging::log_claim_event;
 use crate::message::{ClaimEnvelope, ClaimMessage, ClaimStatus, PayerMessage, RemittanceMessage};
 use crate::remittance::{Remittance, RemittanceRecord};
 
+/// Central routing hub for claim processing workflow
+/// 
+/// Routes claims from billers to appropriate payers and remittances back to billers
+/// Maintains claim history and tracks processing status
 pub struct Clearinghouse {
     claim_rx: Receiver<ClaimMessage>,
     payer_txs: HashMap<String, Sender<PayerMessage>>,
@@ -20,6 +24,7 @@ pub struct Clearinghouse {
 }
 
 impl Clearinghouse {
+    /// Create a new clearinghouse with routing channels and shared state
     pub fn new(
         claim_rx: Receiver<ClaimMessage>,
         payer_txs: HashMap<String, Sender<PayerMessage>>,
@@ -38,6 +43,10 @@ impl Clearinghouse {
         }
     }
 
+    /// Main processing loop for claim routing and remittance handling
+    /// 
+    /// Handles incoming claims and remittances concurrently
+    /// Routes claims to payers and remittances back to originating billers
     pub async fn run(mut self) {
         if self.verbose {
             log_claim_event("clearinghouse", "-", "start", "Starting clearinghouse task");
@@ -75,6 +84,10 @@ impl Clearinghouse {
         }
     }
 
+    /// Process a new claim from a biller
+    /// 
+    /// Routes claim to appropriate payer based on payer_id
+    /// Tracks claim status and response channel for remittance routing
     async fn handle_claim(&mut self, envelope: ClaimEnvelope) {
         let claim = envelope.claim;
         let response_tx = envelope.response_tx;
@@ -118,6 +131,10 @@ impl Clearinghouse {
         }
     }
 
+    /// Process a remittance response from a payer
+    /// 
+    /// Updates claim status and forwards remittance to originating biller
+    /// Validates claim exists and is in correct state
     async fn handle_remittance(&mut self, remittance: Remittance) {
         // println!("ATTEMPTING TO HANDLE REMITTANCE CLEARINGHOUSE ------");
         let claim_id = remittance.claim_id.clone();

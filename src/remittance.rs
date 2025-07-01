@@ -56,6 +56,10 @@ impl RemittanceRecord {
 }
 
 impl Remittance {
+    /// Generate a remittance from a claim using mock payment logic
+    /// 
+    /// Calculates payment amounts based on a simple percentage model:
+    /// 80% paid, 10% coinsurance, 5% copay, 3% deductible, 2% not allowed
     pub fn from_claim(claim: &PayerClaim) -> Remittance {
         let service_line_remittances: Vec<ServiceLineRemittance> = claim
             .service_lines
@@ -89,7 +93,10 @@ impl Remittance {
         }
     }
 
-    /// Validates that the sum of remittance amounts for each service line equals the billed amount.
+    /// Validate that remittance amounts match the original billed amounts
+    /// 
+    /// Ensures the sum of all payment components equals the total charge
+    /// Returns error if amounts don't balance within rounding tolerance
     pub fn validate_against_claim(&self, claim: &PayerClaim) -> Result<(), String> {
         for (remit, service_line) in self
             .service_line_remittances

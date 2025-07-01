@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// The root struct for a claim
+/// Complete healthcare claim with patient, provider, and billing information
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct PayerClaim {
     pub claim_id: String,

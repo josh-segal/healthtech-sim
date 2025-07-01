@@ -7,7 +7,10 @@ use tokio::time;
 
 use crate::message::ClaimStatus;
 
-/// Reporter task that periodically logs AR aging and patient-level summaries.
+/// Periodically generate and display business reports
+/// 
+/// Runs every 5 seconds to show AR aging and patient financial summaries
+/// Uses shared claim history to track processing status
 pub async fn run_reporter(history: Arc<Mutex<HashMap<String, ClaimStatus>>>, verbose: bool) {
     if verbose {
         println!("[reporter] Starting reporter task");
@@ -22,6 +25,10 @@ pub async fn run_reporter(history: Arc<Mutex<HashMap<String, ClaimStatus>>>, ver
     }
 }
 
+/// Generate and print combined AR aging and patient financial reports
+/// 
+/// AR Aging: Groups claims by payer and age buckets (0-1m, 1-2m, 2-3m, 3m+)
+/// Patient Summary: Totals copay, coinsurance, and deductible by patient
 fn print_combined_report(records: &HashMap<String, ClaimStatus>) {
     #[derive(Default)]
     struct Totals {

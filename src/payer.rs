@@ -7,6 +7,10 @@ use crate::logging::log_claim_event;
 use crate::message::{PayerMessage, RemittanceMessage};
 use crate::remittance::Remittance;
 
+/// Simulates an insurance payer for claim adjudication
+/// 
+/// Processes claims asynchronously with configurable response times
+/// Generates remittances with payment breakdowns
 pub struct Payer {
     payer_id: String,
     min_response_time_secs: u64,
@@ -17,6 +21,7 @@ pub struct Payer {
 }
 
 impl Payer {
+    /// Create a new payer with specified response time range
     pub fn new(
         payer_id: String,
         min_response_time_secs: u64,
@@ -35,6 +40,10 @@ impl Payer {
         }
     }
 
+    /// Main processing loop for claim adjudication
+    /// 
+    /// Receives claims, processes them asynchronously with random delays
+    /// Generates and validates remittances before sending responses
     pub async fn run(mut self) {
         if self.verbose {
             log_claim_event(
@@ -110,6 +119,7 @@ impl Payer {
         }
     }
 
+    /// Generate a random processing delay within configured range
     fn random_delay(&self) -> Duration {
         let mut rng = rand::rng();
         let secs = rng.random_range(self.min_response_time_secs..=self.max_response_time_secs);

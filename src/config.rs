@@ -1,5 +1,6 @@
 use std::env;
 
+/// Application configuration for claim processing simulation
 #[derive(Clone)]
 pub struct Config {
     pub file_path: String,
@@ -7,7 +8,12 @@ pub struct Config {
     pub verbose: bool,
 }
 
-// TODO: replace with clap for arg validation and error reporting?
+/// Parse command line arguments to create application configuration
+/// 
+/// Args: [file_path] [ingest_rate] [verbose_flag]
+/// - file_path: JSONL file with claims (default: fake_claims.jsonl)
+/// - ingest_rate: seconds between claim processing (default: 1)
+/// - verbose: enable detailed logging (default: false)
 pub fn config() -> Config {
     let mut args = env::args().skip(1); // skip program name
 

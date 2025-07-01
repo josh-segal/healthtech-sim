@@ -3,7 +3,9 @@ use crate::schema::PayerClaim;
 use std::time::Instant;
 use tokio::sync::mpsc::Sender;
 
-/// Struct that wraps a claim with a backward channel to send back remittance response
+/// Wraps a claim with a response channel for remittance processing
+/// 
+/// Used by biller to track which claim a remittance response belongs to
 #[derive(Debug)]
 pub struct ClaimEnvelope {
     pub claim: PayerClaim,

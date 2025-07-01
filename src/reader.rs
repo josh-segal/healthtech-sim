@@ -5,6 +5,10 @@ use tokio::sync::mpsc::Sender;
 use crate::logging::log_claim_event;
 use crate::schema::PayerClaim;
 
+/// Stream claims from a JSONL file and send them to the biller
+/// 
+/// Reads claims line by line, parses JSON, and forwards valid claims
+/// Skips invalid JSON lines and continues processing
 pub async fn stream_claims(
     path: &str,
     tx: Sender<PayerClaim>,

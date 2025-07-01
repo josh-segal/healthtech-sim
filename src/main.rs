@@ -13,6 +13,9 @@ use healthtechsim::reader;
 use healthtechsim::reporter;
 use healthtechsim::schema;
 
+/// Healthcare claim processing simulation
+/// 
+/// Orchestrates the complete workflow: reader → biller → clearinghouse → payer → remittance
 #[tokio::main]
 async fn main() -> Result<()> {
     // parse CLI args
