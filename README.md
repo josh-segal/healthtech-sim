@@ -61,4 +61,30 @@ Suppose a single claim for patient "Jane Doe" is processed:
 - **Biller**: The system or person responsible for submitting claims and managing responses.
 - **JSONL**: JSON Lines format, where each line is a separate JSON object (used for input claims).
 
+## How to Run
+
+Build and run the simulation using Cargo:
+
+```sh
+cargo run [file_path] [ingest_rate] [verbose]
+```
+
+- `file_path` (optional): Path to the JSONL file containing claims. If omitted, defaults to `fake_claims.jsonl` (which will be generated with fake data if it doesn't exist).
+- `ingest_rate` (optional): Number of seconds between each claim ingestion. If omitted, defaults to `1` (second).
+- `verbose` (optional): Add `verbose` or `v` as an argument to enable detailed logging. If omitted, verbose logging is off.
+
+**Examples:**
+
+- Run with all defaults (uses `fake_claims.jsonl`, 1 second per claim, no verbose logging):
+  ```sh
+  cargo run
+  ```
+- Run with a custom file and ingest rate:
+  ```sh
+  cargo run my_claims.jsonl 2
+  ```
+- Run with verbose logging enabled:
+  ```sh
+  cargo run my_claims.jsonl 2 verbose
+  ```
 

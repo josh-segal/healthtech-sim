@@ -15,16 +15,15 @@ pub struct Config {
 /// - ingest_rate: seconds between claim processing (default: 1)
 /// - verbose: enable detailed logging (default: false)
 pub fn config() -> Config {
-    let mut args = env::args().skip(1); // skip program name
+    let args: Vec<String> = env::args().skip(1).collect();
 
-    let file_path = args.next().unwrap_or("fake_claims.jsonl".to_string());
-    let ingest_rate: u64 = args
-        .next()
-        .unwrap_or("1".to_string())
-        .parse()
-        .expect("ingest_rate must be a valid u64");
-    // Check for verbose flag in remaining args
-    let verbose = args.any(|arg| arg == "verbose" || arg == "v");
+    let file_path = args.get(0).cloned().unwrap_or_else(|| "fake_claims.jsonl".to_string());
+
+    let ingest_rate = args.get(1)
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(1);
+
+    let verbose = args.iter().any(|arg| arg == "verbose" || arg == "v");
 
     Config {
         file_path,

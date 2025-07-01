@@ -27,6 +27,7 @@ async fn main() -> Result<()> {
     println!("Wrote {} fake claims to fake_claims.jsonl", claims);
 
     let config = config::config();
+    println!("Config settings: file_path={}, ingest_rate={}, verbose={}", config.file_path, config.ingest_rate, config.verbose);
 
     // channels
     let (claim_input_tx, claim_input_rx) = mpsc::channel::<schema::PayerClaim>(100);
