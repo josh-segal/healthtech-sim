@@ -38,4 +38,27 @@ HealthTechSim implements a distributed, event-driven architecture that mirrors r
 
 **Reporter** (`src/reporter.rs`): Monitors the overall system performance by collecting statistics on claim processing times, success rates, and aging analysis from the shared claim history.
 
+## Component Interaction Flow (Example)
+
+Suppose a single claim for patient "Jane Doe" is processed:
+
+1. **Reader** reads Jane's claim from `claims.jsonl` and sends it to the **Biller**.
+2. **Biller** rate-limits and forwards Jane's claim to the **Clearinghouse**.
+3. **Clearinghouse** examines the claim, determines the correct **Payer** (e.g., "Acme Insurance"), and routes the claim there.
+4. **Payer** simulates adjudication, deciding what portion of Jane's claim is covered, and creates a remittance response.
+5. **Clearinghouse** receives the remittance and sends it back to the originating **Biller**.
+6. **Reporter** logs the processing time and outcome for Jane's claim, updating system statistics.
+
+---
+
+## Glossary
+
+- **Claim**: A request for payment submitted by a healthcare provider to an insurance payer for services rendered to a patient.
+- **Remittance**: The response from a payer detailing what was paid, denied, or adjusted for a claim.
+- **Clearinghouse**: An intermediary that routes claims from providers to payers, often performing validation and tracking.
+- **Adjudication**: The process by which a payer reviews and determines the outcome of a claim.
+- **Payer**: An insurance company or entity responsible for processing and reimbursing claims.
+- **Biller**: The system or person responsible for submitting claims and managing responses.
+- **JSONL**: JSON Lines format, where each line is a separate JSON object (used for input claims).
+
 
