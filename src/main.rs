@@ -44,8 +44,16 @@ async fn main() -> Result<()> {
     let biller_txs = Arc::new(Mutex::new(HashMap::new()));
     let remittance_history = Arc::new(Mutex::new(HashMap::new()));
 
+    let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
+
     // setup and spawn tasks
-    setup_biller_task(config.clone(), claim_input_rx, claim_tx.clone());
+    setup_biller_task(
+        config.clone(),
+        claim_input_rx,
+        claim_tx.clone(),
+        claims,
+        shutdown_tx,
+    );
     setup_clearinghouse_task(
         claim_rx,
         payer_txs,
@@ -65,8 +73,14 @@ async fn main() -> Result<()> {
     setup_reader_task(&config.file_path, claim_input_tx, config.verbose);
 
     // shutdown
-    tokio::signal::ctrl_c().await?;
-    println!("Shutdown signal received.");
+    tokio::select! {
+        _ = shutdown_rx.recv() => {
+            println!("All remittances received. Shutting down.");
+        }
+        _ = tokio::signal::ctrl_c() => {
+            println!("Shutdown signal received.");
+        }
+    }
     Ok(())
 }
 
@@ -74,8 +88,10 @@ fn setup_biller_task(
     config: config::Config,
     claim_input_rx: mpsc::Receiver<schema::PayerClaim>,
     claim_tx: mpsc::Sender<healthtechsim::message::ClaimMessage>,
+    total_claims: usize,
+    shutdown_tx: mpsc::Sender<()>,
 ) {
-    tokio::spawn(biller::run_biller(config, claim_input_rx, claim_tx, None));
+    tokio::spawn(biller::run_biller(config, claim_input_rx, claim_tx, None, total_claims, shutdown_tx));
 }
 
 fn setup_clearinghouse_task(
@@ -119,24 +135,24 @@ fn setup_payer_tasks(
 ) {
     let payer1 = payer::Payer::new(
         "medicare".into(),
-        1,
-        3,
+        10,
+        30,
         remit_tx.clone(),
         payer1_rx,
         verbose,
     );
     let payer2 = payer::Payer::new(
         "united_health_group".into(),
-        2,
-        4,
+        5,
+        6,
         remit_tx.clone(),
         payer2_rx,
         verbose,
     );
     let payer3 = payer::Payer::new(
         "anthem".into(),
-         1,
-          2,
+         60,
+          100,
            remit_tx.clone(), 
            payer3_rx, 
            verbose

@@ -6,6 +6,9 @@ use crate::logging::log_claim_event;
 use crate::message::{ClaimEnvelope, ClaimMessage};
 use crate::schema::PayerClaim;
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 /// Biller task that processes claims received over a PayerClaim channel.
 ///
 /// For each incoming claim:
@@ -20,6 +23,8 @@ pub async fn run_biller(
     mut rx: Receiver<PayerClaim>,
     tx: Sender<ClaimMessage>,
     test_notify: Option<Sender<String>>, //optional notification for remittance
+    total_claims: usize,
+    shutdown_tx: Sender<()>,
 ) -> anyhow::Result<()> {
     if config.ingest_rate == 0 {
         return Err(anyhow::anyhow!("Config ingest_rate must be non-zero"));
@@ -30,9 +35,24 @@ pub async fn run_biller(
     if verbose {
         log_claim_event("biller", "-", "start", "Starting biller task");
     }
+    let remittances_received = Arc::new(AtomicUsize::new(0));
+    let mut claims_sent = 0;
+
     while let Some(claim) = rx.recv().await {
         ticker.tick().await;
-        process_claim(claim, &tx, &test_notify, verbose).await?;
+        claims_sent += 1;
+        process_claim(
+            claim,
+            &tx,
+            &test_notify,
+            verbose,
+            remittances_received.clone(),
+            total_claims,
+            shutdown_tx.clone(),
+        ).await?;
+        if claims_sent == total_claims {
+            break;
+        }
     }
     Ok(())
 }
@@ -42,6 +62,9 @@ async fn process_claim(
     tx: &Sender<ClaimMessage>,
     test_notify: &Option<Sender<String>>,
     verbose: bool,
+    remittances_received: Arc<AtomicUsize>,
+    total_claims: usize,
+    shutdown_tx: Sender<()>,
 ) -> anyhow::Result<()> {
     if verbose {
         log_claim_event(
@@ -54,7 +77,15 @@ async fn process_claim(
     let (rem_tx, rem_rx) = tokio::sync::mpsc::channel(1);
     let test_notify_opt = test_notify.clone();
     let claim_id = claim.claim_id.clone();
-    tokio::spawn(listen_for_remittance(rem_rx, claim_id.clone(), test_notify_opt, verbose));
+    tokio::spawn(listen_for_remittance(
+        rem_rx,
+        claim_id.clone(),
+        test_notify_opt,
+        verbose,
+        remittances_received,
+        total_claims,
+        shutdown_tx.clone(),
+    ));
     let envelope = ClaimEnvelope {
         claim,
         response_tx: rem_tx,
@@ -79,6 +110,9 @@ async fn listen_for_remittance(
     claim_id: String,
     test_notify_opt: Option<Sender<String>>,
     verbose: bool,
+    remittances_received: Arc<AtomicUsize>,
+    total_claims: usize,
+    shutdown_tx: Sender<()>,
 ) {
     if let Some(_response) = rem_rx.recv().await {
         if verbose {
@@ -92,8 +126,12 @@ async fn listen_for_remittance(
         if let Some(tx) = test_notify_opt {
             let _ = tx.send(claim_id).await;
         }
+        let count = remittances_received.fetch_add(1, Ordering::SeqCst) + 1;
+        if count == total_claims {
+                let _ = shutdown_tx.send(()).await;
+            }
+        }
     }
-}
 
 #[cfg(test)]
 mod tests {
@@ -123,7 +161,7 @@ mod tests {
 
         // spawn biller task
         tokio::spawn(async move {
-            let _ = run_biller(mock_config, claim_rx, out_tx, Some(notify_tx)).await;
+            let _ = run_biller(mock_config, claim_rx, out_tx, Some(notify_tx), 1, None).await;
         });
 
         // send a mock claim
@@ -165,7 +203,7 @@ mod tests {
         let (notify_tx, _notify_rx) = tokio::sync::mpsc::channel(1);
         // Spawn biller task, then drop the output channel to simulate clearinghouse down
         let biller_handle = tokio::spawn(async move {
-            run_biller(mock_config, claim_rx, out_tx, Some(notify_tx)).await
+            run_biller(mock_config, claim_rx, out_tx, Some(notify_tx), 1, None).await
         });
         // Drop the output channel after spawning
         // (out_tx is moved into the spawned task, so we can't drop it here)
@@ -193,7 +231,7 @@ mod tests {
         let (out_tx, mut out_rx) = tokio::sync::mpsc::channel(1);
         let (notify_tx, mut notify_rx) = tokio::sync::mpsc::channel(1);
         tokio::spawn(async move {
-            let _ = run_biller(mock_config, claim_rx, out_tx, Some(notify_tx)).await;
+            let _ = run_biller(mock_config, claim_rx, out_tx, Some(notify_tx), 1, None).await;
         });
         let mock_claim = mock_claim();
         claim_tx.send(mock_claim.clone()).await.unwrap();
@@ -223,7 +261,7 @@ mod tests {
         let (_claim_tx, claim_rx) = tokio::sync::mpsc::channel(1);
         let (out_tx, _out_rx) = tokio::sync::mpsc::channel(1);
         let (notify_tx, _notify_rx) = tokio::sync::mpsc::channel(1);
-        let result = run_biller(mock_config, claim_rx, out_tx, Some(notify_tx)).await;
+        let result = run_biller(mock_config, claim_rx, out_tx, Some(notify_tx), 1, None).await;
         assert!(result.is_err(), "Expected error with invalid ingest_rate");
         let err_msg = format!("{}", result.unwrap_err());
         assert!(
@@ -246,7 +284,7 @@ mod tests {
         let (out_tx, mut out_rx) = tokio::sync::mpsc::channel(2);
         let (notify_tx, mut notify_rx) = tokio::sync::mpsc::channel(2);
         tokio::spawn(async move {
-            let _ = run_biller(mock_config, claim_rx, out_tx, Some(notify_tx)).await;
+            let _ = run_biller(mock_config, claim_rx, out_tx, Some(notify_tx), 2, None).await;
         });
         let claim1 = mock_claim();
         let mut claim2 = mock_claim();
@@ -288,7 +326,7 @@ mod tests {
         let (out_tx, mut out_rx) = tokio::sync::mpsc::channel(1);
         let (notify_tx, mut notify_rx) = tokio::sync::mpsc::channel(1);
         tokio::spawn(async move {
-            let _ = run_biller(mock_config, claim_rx, out_tx, Some(notify_tx)).await;
+            let _ = run_biller(mock_config, claim_rx, out_tx, Some(notify_tx), 1, None).await;
         });
         let empty_claim = PayerClaim {
             claim_id: "empty1".to_string(),
