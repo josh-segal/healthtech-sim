@@ -44,7 +44,7 @@ async fn main() -> Result<()> {
     let biller_txs = Arc::new(Mutex::new(HashMap::new()));
     let remittance_history = Arc::new(Mutex::new(HashMap::new()));
 
-    let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
+    let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1); //TODO: change into pattern that guarantees only one sender
 
     // setup and spawn tasks
     setup_biller_task(
