@@ -87,4 +87,3 @@ cargo run [file_path] [ingest_rate] [verbose]
   ```sh
   cargo run my_claims.jsonl 2 verbose
   ```
-
